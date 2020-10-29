@@ -2,33 +2,33 @@ import torch
 import math
 import torch.nn as nn
 import torchvision.models as models
-import config as cfg
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 class Discriminator(nn.Module):
-    def __init__(self, gpu=False,dropout=0.2):
+    def __init__(self, args, gpu=False,dropout=0.2):
         super(Discriminator, self).__init__()
 
-        self.vocab_size = cfg.vocab_size
-        self.embed_dim = cfg.dis_embed_dim
-        self.padding_idx = cfg.padding_idx
-        self.feature_dim = sum(cfg.dis_num_filters)
-        self.emb_dim_single = int(cfg.dis_embed_dim / cfg.num_rep)
+        self.vocab_size = args.vocab_size
+        self.embed_dim = args.disc_embed_dim
+        self.padding_idx = args.padding_idx
+        self.feature_dim = sum(args.disc_num_filters)
+        self.emb_dim_single = int(args.disc_embed_dim / args.disc_num_rep)
         self.gpu = gpu
 
         self.embeddings = nn.Linear(self.vocab_size, self.embed_dim, bias=False)
 
         self.convs = nn.ModuleList([
             nn.Conv2d(1, n, (f, self.emb_dim_single), stride=(1, self.emb_dim_single)) for (n, f) in
-            zip(cfg.dis_num_filters, cfg.dis_filter_sizes)
+            zip(args.disc_num_filters, args.disc_filter_sizes)
         ])
 
         self.highway = nn.Linear(self.feature_dim, self.feature_dim)
         self.feature2out = nn.Linear(self.feature_dim, 100)
         self.out2logits = nn.Linear(100, 1)
         self.dropout = nn.Dropout(dropout)
+        self.args = args
         self.init_params()
 
     def forward(self, inp):
@@ -69,8 +69,8 @@ class Discriminator(nn.Module):
         for param in self.parameters():
             if param.requires_grad and len(param.shape) > 0:
                 stddev = 1 / math.sqrt(param.shape[0])
-                if cfg.dis_init == 'uniform':
+                if self.args.disc_init == 'uniform':
                     torch.nn.init.uniform_(param, a=-0.05, b=0.05)
-                elif cfg.dis_init == 'normal':
+                elif self.args.disc_init == 'normal':
                     torch.nn.init.normal_(param, std=stddev)
 

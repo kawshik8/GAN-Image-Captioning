@@ -31,6 +31,9 @@ args = get_args()
 # train_data = [(images,captions,lengths)]
 
 train_dataset = COCO_data(args.data_dir,'train')
+
+args.vocab_size = train_dataset.vocab_size
+
 val_dataset = COCO_data(args.data_dir,'val')
 
 #create a validation loader 

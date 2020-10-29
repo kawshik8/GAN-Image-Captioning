@@ -15,14 +15,14 @@ class GANInstructor():
     def __init__(self, args, train_dataset, dev_dataset):
 
         # generator, discriminator
-        self.gen = Generator().to(cfg.device)
-        self.disc = Discriminator().to(cfg.device)
+        self.gen = Generator(args).to(cfg.device)
+        self.disc = Discriminator(args).to(cfg.device)
         self.log = create_logger(__name__, silent=False, to_disk=True,
                                  log_file=cfg.log_filename if cfg.if_test
                                  else [cfg.log_filename, cfg.save_root + 'log.txt'])
         # Optimizer
-        self.gen_opt = optim.Adam(self.gen.parameters(), lr=cfg.gen_lr)
-        self.gen_adv_opt = optim.Adam(self.gen.parameters(), lr=cfg.gen_adv_lr)
+        self.pretrain_opt = optim.Adam(self.gen.parameters(), lr=args.gen_lr)
+        self.gen_opt = optim.Adam(self.gen.parameters(), lr=cfg.gen_adv_lr)
         self.disc_opt = optim.Adam(self.disc.parameters(), lr=cfg.dis_lr)
 
         self.pre_train_loader = DataLoader(train_dataset, batch_size=args.pre_train_batch_size)
@@ -75,11 +75,11 @@ class GANInstructor():
 
         gen_loss = []
 
-        with (torch.enable_grad() if what=='train' else torch.nograd()), tqdm(total = (len(train_dataset) if what=='train' else len(dev_dataset))):
+        with (torch.enable_grad() if what=='train' else torch.nograd()), tqdm(total = (len(train_dataset) if what=='train' else len(dev_dataset))) as progress:
             for batch_idx, (images, captions, lengths) in enumerate((self.pre_train_loader if what=='train' else self.pre_eval_loader)):
 
                 real_samples = captions 
-                self.gen_opt.zero_grad()
+                self.pretrain_opt.zero_grad()
                 if cfg.cuda:
                     images,captions,lengths = images.cuda(),captions.cuda(),lengths.cuda()               
                 gen_samples,_ = self.gen(images, captions, lengths)
@@ -92,13 +92,13 @@ class GANInstructor():
                 criterion = nn.CrossEntropyLoss()
                 loss = torch.autograd.Variable(criterion(outputs, targets), requires_grad=True)
                 if what == 'train':
-                    self.optimize(self.gen_opt, loss, self.gen)
+                    self.optimize(self.pretrain_opt, loss, self.gen)
 
                 gen_loss.append(loss.item())
 
                 self.writer.add_scalar('GenPreTraining_train_loss' if what=='train' else 'GenPreTraining_val_loss',loss,self.pretrain_steps)
                 
-                progress.update(1)
+                progress.update(len(images))
                 progress.set_postfix(loss=loss.item())        
         
         return gen_loss
@@ -131,7 +131,7 @@ class GANInstructor():
         total_gen_loss = 0
         total_disc_loss = 0
         
-        with (torch.enable_grad() if what=='train' else torch.nograd()), tqdm(total=(len(self.train_dataset) if what == 'train' else len(self.dev_dataset))):
+        with (torch.enable_grad() if what=='train' else torch.nograd()), tqdm(total=(len(self.train_dataset) if what == 'train' else len(self.dev_dataset))) as progress:
             gen_loss = []
             disc_loss = []
             for batch_idx, (images, captions, lengths) in enumerate((self.adv_train_loader if what=='train' else self.adv_eval_loader)):
@@ -153,7 +153,7 @@ class GANInstructor():
 
                 if what == 'train':
                     self.optimize(self.disc_opt, d_loss, self.disc)
-                    self.optimize(self.gen_adv_opt, g_loss, self.gen)
+                    self.optimize(self.gen_opt, g_loss, self.gen)
 
                 self.writer.add_scalar('Discriminator_train_loss' if what=='train' else 'Discriminator_val_loss',d_loss,self.disc_steps)
                 self.disc_steps+=1
