@@ -13,6 +13,7 @@ from random import seed, choice, sample
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from tqdm import tqdm
+import pickle
 
 class COCO_data(Dataset):
     def __init__(self, captions_path, image_path, split, image_size=256):
@@ -29,32 +30,42 @@ class COCO_data(Dataset):
         
         captions = json_file['images']
         
-        self.captions = []
-        
-        t_captions = captions.copy()
-        for i,row in enumerate(t_captions):
-            if split not in row['filepath']:
-                captions.remove(t_captions[i])
-            else:
+
+        if os.path.exists(os.path.join(image_path, split + ".pkl")):
+            saved_dict = pickle.load(open(os.path.join(image_path,split + ".pkl"),'rb'))
+            self.captions = saved_dict['captions']
+            self.word_to_index = saved_dict["w2i"]
+            self.index_to_word = saved_dict["i2w"]
+
+        else:
+            self.captions = []
+            
+            t_captions = captions.copy()
+            for i,row in enumerate(t_captions):
+                if split not in row['filepath']:
+                    captions.remove(t_captions[i])
+                else:
+                            
+                    for caption in row['sentences']:
+                        caption_dict = {}
+                        for key in row:
+                            if type(row[key]) != list:
+                                caption_dict[key] = row[key]
                         
-                for caption in row['sentences']:
-                    caption_dict = {}
-                    for key in row:
-                        if type(row[key]) != list:
-                            caption_dict[key] = row[key]
-                    
-                    for key in caption:
-                        caption_dict[key] = caption[key]
-                        
-                    self.captions.append(caption_dict)
-                           
-                    for word in caption['tokens']:
-                        if word not in self.word_to_index:
-                            curr_len = len(list(self.word_to_index.keys())) + 3
-                            self.word_to_index[word] = curr_len
-                            self.index_to_word[curr_len] = word
+                        for key in caption:
+                            caption_dict[key] = caption[key]
+                            
+                        self.captions.append(caption_dict)
+                            
+                        for word in caption['tokens']:
+                            if word not in self.word_to_index:
+                                curr_len = len(list(self.word_to_index.keys())) + 3
+                                self.word_to_index[word] = curr_len
+                                self.index_to_word[curr_len] = word
+
+            save_dict = {"captions":self.captions, "w2i": self.word_to_index, "i2w": self.index_to_word}
                 
-                                 
+            pickle.dump(save_dict, open(os.path.join(image_path,split + ".pkl"),'wb+'))
                          
                          
         self.image_size = image_size
@@ -67,7 +78,7 @@ class COCO_data(Dataset):
                                                      std=[0.229, 0.224, 0.225]),
                             ]
                         )
-                        
+
         self.vocab_size = len(list(self.word_to_index.keys()))
 
             
