@@ -1,4 +1,4 @@
-import config as cfg
+#import config as cfg
 import torch
 import random
 import numpy as np
@@ -7,19 +7,22 @@ from tasks import COCO_data, collate_fn
 from torch.utils.data import DataLoader
 from args import *
 
+args = get_args()
 # Set up random seed to 1008. Do not change the random seed.
 # Yes, these are all necessary when you run experiments!
+
 seed = 1008
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
-if cfg.cuda:
+
+if torch.cuda.is_available():
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-args = get_args()
+#args = get_args()
 # vocab = ["<pad>", "cat","on","the","mat","hello"]
 # images= torch.rand(2,3,64,64)
 # lengths = torch.tensor([5,6])
@@ -34,13 +37,13 @@ train_dataset = COCO_data(args.data_dir + "/dataset_coco.json", args.data_dir, '
 
 args.vocab_size = train_dataset.vocab_size
 
-val_dataset = COCO_data(rgs.data_dir + "/dataset_coco.json", args.data_dir, 'val',args.image_size)
+val_dataset = COCO_data(args.data_dir + "/dataset_coco.json", args.data_dir, 'val',args.image_size)
 
 #create a validation loader 
 
 # train_data = [(images,captions,lengths)]
 # val_data = [(images,captions,lengths)]
-inst = GANInstructor(args, train_dataset, val_coco) #Pass the validation loader for second argument. 
+inst = GANInstructor(args, train_dataset, val_dataset) #Pass the validation loader for second argument. 
 
 inst._run()
 #inst.evaluate(dataloader=val_data, isTest=True) #For testing still need to calculate accuracy.

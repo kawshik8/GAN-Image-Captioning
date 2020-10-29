@@ -7,9 +7,9 @@ device = torch.device("cuda:0" if cuda else "cpu")
 
 import argparse 
 
-def add_model_args():
+def add_model_args(parser):
 
-    parser = argparse.ArgumentParser('NLP GAN Model args')
+    #parser = argparse.ArgumentParser('NLP GAN Model args')
 
     ################### Generator ###################
 
@@ -65,14 +65,14 @@ def add_model_args():
                             default='uniform',
                             help='init strategy for discriminator weights')
                        
-    args = parser.parse_args()
+    #args = parser.parse_args()
 
-    return args
+    #return args
 
 
-def add_data_args():
+def add_data_args(parser):
 
-    parser = argparse.ArgumentParser('NLP GAN Data args')
+    #parser = argparse.ArgumentParser('NLP GAN Data args')
 
     ################### NLP Part ###################
 
@@ -101,13 +101,13 @@ def add_data_args():
 
 
 
-    args = parser.parse_args()
+    #args = parser.parse_args()
 
-    return args
+    #return args
 
-def add_training_args():
+def add_training_args(parser):
 
-    parser = argparse.ArgumentParser('NLP GAN training args')
+    #parser = argparse.ArgumentParser('NLP GAN training args')
 
     ################### Pretraining ###################
 
@@ -184,13 +184,17 @@ def add_training_args():
                             help='Gradient clipping threshold')
 
 
-    args = parser.parse_args()
+    #args = parser.parse_args()
         
-    return args
+    #return args
 
 def get_args():
 
     parser = argparse.ArgumentParser('NLP GAN args')
+
+    add_training_args(parser)
+    add_data_args(parser)
+    add_model_args(parser)
         
     parser.add_argument('--device',
                             type=str,
@@ -250,7 +254,7 @@ def get_args():
     args.log_file = os.path.join(args.save_dir, args.log_file)
     
     if args.device == 'cuda' and torch.cuda.is_available():
-        args.device = torch.device(f"cuda:{args.device_ids}")
+        args.device = torch.device("cuda:0")#{args.device_ids}")
     else:
         args.device = torch.device("cpu")
 
