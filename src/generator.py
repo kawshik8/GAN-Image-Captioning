@@ -70,6 +70,7 @@ class Decoder(nn.Module):
             
         u.uniform_(0, 1)
         g_t = -torch.log(-torch.log(u + eps) + eps)
+        if cfg.cuda: g_t = g_t.cuda()
         gumbel_t = o_t + g_t
         return gumbel_t
 

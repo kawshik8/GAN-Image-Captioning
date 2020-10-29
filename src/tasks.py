@@ -67,8 +67,9 @@ class COCO_data(Dataset):
                                                      std=[0.229, 0.224, 0.225]),
                             ]
                         )
-        
+                        
         self.vocab_size = len(list(self.word_to_index.keys()))
+
             
                          
     def __len__(self):
@@ -112,7 +113,7 @@ def collate_fn(batch):
     max_caption_len += 2
                 
     captions = torch.zeros(len(batch), max_caption_len).type(torch.long)
-    lengths = torch.zeros(len(batch), 1).type(torch.long)
+    lengths = torch.zeros(len(batch)).type(torch.long)
     
     for i in range(len(batch)):
         curr_len = len(batch[i][1])

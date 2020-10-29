@@ -32,6 +32,7 @@ args = get_args()
 
 train_dataset = COCO_data(args.data_dir,'train')
 val_dataset = COCO_data(args.data_dir,'val')
+
 #create a validation loader 
 
 # train_data = [(images,captions,lengths)]
