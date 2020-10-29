@@ -1,10 +1,4 @@
-import torch
 import os 
-
-# Set up your device 
-cuda = torch.cuda.is_available()
-device = torch.device("cuda:0" if cuda else "cpu")
-
 import argparse 
 
 def add_model_args(parser):
