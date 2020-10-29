@@ -34,6 +34,7 @@ class Decoder(nn.Module):
         self.max_seg_length = args.max_seq_len
         self.temperature = args.temperature
         self.args = args
+        #self.device = args.device
         
     def forward(self, features, caps, lengths):
         """Decode image feature vectors and generates captions."""
@@ -62,8 +63,8 @@ class Decoder(nn.Module):
         sampled_ids = torch.stack(sampled_ids, 1)                # sampled_ids: (batch_size, max_seq_length)
         return sampled_ids
     
-    @staticmethod
-    def add_gumbel(o_t, eps=1e-10, gpu=0):
+    #@staticmethod
+    def add_gumbel(self, o_t, eps=1e-10, gpu=0):
         """Add o_t by a vector sampled from Gumbel(0,1)"""
         u = torch.zeros(o_t.size())
 

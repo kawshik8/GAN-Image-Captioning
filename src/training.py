@@ -9,6 +9,7 @@ from generator import *
 from discriminator import *
 import numpy as np
 from torch.utils.data import DataLoader
+from tasks import collate_fn
 
 class GANInstructor():
     def __init__(self, args, train_dataset, dev_dataset):
@@ -23,12 +24,15 @@ class GANInstructor():
         self.gen_opt = optim.Adam(self.gen.parameters(), lr=args.gen_lr)
         self.disc_opt = optim.Adam(self.disc.parameters(), lr=args.disc_lr)
 
-        self.pre_train_loader = DataLoader(train_dataset, batch_size=args.pre_train_batch_size)
-        self.pre_dev_loader = DataLoader(dev_dataset, batch_size=args.pre_eval_batch_size)
+        self.pre_train_loader = DataLoader(train_dataset, batch_size=args.pre_train_batch_size, collate_fn=collate_fn)
+        self.pre_dev_loader = DataLoader(dev_dataset, batch_size=args.pre_eval_batch_size, collate_fn=collate_fn)
 
-        self.adv_train_loader = DataLoader(train_dataset, batch_size=args.adv_train_batch_size)
-        self.adv_dev_loader = DataLoader(dev_dataset, batch_size=args.adv_eval_batch_size)
-        
+        self.adv_train_loader = DataLoader(train_dataset, batch_size=args.adv_train_batch_size, collate_fn=collate_fn)
+        self.adv_dev_loader = DataLoader(dev_dataset, batch_size=args.adv_eval_batch_size, collate_fn=collate_fn)
+       
+        self.train_dataset = train_dataset
+        self.dev_dataset = dev_dataset
+ 
         self.writer = SummaryWriter()
         
         self.pretrain_steps = 0
@@ -50,7 +54,12 @@ class GANInstructor():
         progress = tqdm(range(self.args.adv_epochs))
 
         for adv_epoch in progress:
+            self.disc.train()
+            self.gen.train()
             train_g_loss, train_d_loss = self.adv_loop('train')  # Discriminator
+            
+            self.disc.eval()
+            self.gen.eval()
             val_g_loss, val_d_loss = self.adv_loop('val')
 
             self.update_temperature(adv_epoch, self.args.adv_epochs)  # update temperature
@@ -72,13 +81,14 @@ class GANInstructor():
 
         gen_loss = []
 
-        with (torch.enable_grad() if what=='train' else torch.nograd()), tqdm(total = (len(train_dataset) if what=='train' else len(dev_dataset))) as progress:
+        with (torch.enable_grad() if what=='train' else torch.nograd()), tqdm(total = (len(self.train_dataset) if what=='train' else len(self.dev_dataset))) as progress:
             for batch_idx, (images, captions, lengths) in enumerate((self.pre_train_loader if what=='train' else self.pre_eval_loader)):
 
+                images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)
                 real_samples = captions 
                 self.pretrain_opt.zero_grad()
 
-                images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)              
+                #images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)              
                 
                 gen_samples,_ = self.gen(images, captions, lengths)
 
@@ -88,7 +98,10 @@ class GANInstructor():
                 outputs = pack_padded_sequence(gen_samples, lengths, batch_first=True, enforce_sorted=False)[0]      
 
                 criterion = nn.CrossEntropyLoss()
-                loss = torch.autograd.Variable(criterion(outputs, targets), requires_grad=True)
+
+                loss = criterion(outputs, targets)
+                #print(loss)
+
                 if what == 'train':
                     self.optimize(self.pretrain_opt, loss, self.gen)
 
@@ -105,13 +118,15 @@ class GANInstructor():
         print("Pretraining Generator")
         total_loss = 0
 
-        for epoch in range(self.args.adv_epochs):
+        for epoch in range(self.args.pretrain_epochs):
 
+            self.gen.train()
             gen_loss = self.genpretrain_loop('train')
             train_epoch_loss = np.mean(gen_loss)       
 
             total_loss += train_epoch_loss 
 
+            self.gen.eval()
             gen_loss = self.genpretrain_loop('val')
             val_epoch_loss = np.mean(gen_loss)
 
@@ -123,7 +138,7 @@ class GANInstructor():
 
             self.pretrain_steps+=1
 
-        return total_loss/epochs
+        return (total_loss/epochs if epochs!=0 else 0)
     
     def adv_loop(self, what):
         total_gen_loss = 0
@@ -133,7 +148,12 @@ class GANInstructor():
             gen_loss = []
             disc_loss = []
             for batch_idx, (images, captions, lengths) in enumerate((self.adv_train_loader if what=='train' else self.adv_eval_loader)):
+        
+                images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)
                 real_samples = captions #train_data -> (images,lengths,captions)
+          
+                self.disc_opt.zero_grad()
+                self.gen_opt.zero_grad()
                 features = self.gen.encoder(images)
                 gen_samples = self.gen.decoder.sample(features)
 
@@ -149,7 +169,7 @@ class GANInstructor():
                 g_loss, d_loss = get_losses(d_out_real, d_out_fake, g_out, self.args.adv_loss_type)
 
                 if what == 'train':
-                    self.optimize(self.disc_opt, d_loss, self.disc)
+                    self.optimize(self.disc_opt, d_loss, self.disc, True)
                     self.optimize(self.gen_opt, g_loss, self.gen)
 
                 self.writer.add_scalar('Discriminator_train_loss' if what=='train' else 'Discriminator_val_loss',d_loss,self.disc_steps)
@@ -162,7 +182,7 @@ class GANInstructor():
                 disc_loss.append(d_loss.item())
 
                 progress.update(len(images))
-                progess.set_postfix(disc_loss=d_loss.item(), gen_loss=g_loss.item())
+                progress.set_postfix(disc_loss=d_loss.item(), gen_loss=g_loss.item())
 
         total_gen_loss = np.mean(gen_loss)
         total_disc_loss = np.mean(disc_loss)
@@ -205,9 +225,9 @@ class GANInstructor():
     def update_temperature(self, i, N):
         self.gen.decoder.temperature = get_fixed_temperature(self.args.temperature, i, N, self.args.temp_adpt)
 
-    @staticmethod
-    def optimize(opt, loss, model=None, retain_graph=False):
-        opt.zero_grad()
+    #@staticmethod
+    def optimize(self, opt, loss, model=None, retain_graph=False):
+        #opt.zero_grad()
         loss.backward(retain_graph=retain_graph)
         if model is not None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.clip_norm)
