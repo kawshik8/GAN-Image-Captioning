@@ -91,7 +91,7 @@ class COCO_data(Dataset):
 
         caption = caption_dict['tokens']
 #         self.caption_indices_dict[captions['imgid']] += 1
-        print(index)
+        #print(index)
 #         print(index,image_path,caption)
 
         for i in range(len(caption)):
@@ -110,13 +110,14 @@ def collate_fn(batch):
         max_caption_len = max(max_caption_len, len(batch[i][1]))
     max_caption_len += 2
                 
-    captions = torch.zeros(len(batch), max_caption_len)
-    lengths = torch.zeros_like(captions)
+    captions = torch.zeros(len(batch), max_caption_len).type(torch.long)
+    lengths = torch.zeros(len(batch), 1).type(torch.long)
     
     for i in range(len(batch)):
         curr_len = len(batch[i][1])
         captions[i] = torch.LongTensor([1] + batch[i][1] + [2] + [0]*(max_caption_len - curr_len - 2))
-    
+        lengths[i] = curr_len        
+
     return images, captions, lengths
 
 if __name__ == '__main__':
@@ -128,6 +129,6 @@ if __name__ == '__main__':
         for i,instance in enumerate(loader):
             image, caption = instance
 
-            progress_bar.update(len(image)
+            progress_bar.update(len(image))
             
             

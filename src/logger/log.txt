@@ -1,4 +1,0 @@
-Starting Adversarial Training...
-[ADV] epoch 0: g_loss: 0.6932, d_loss: 0.6930
-[ADV] epoch 20: g_loss: 0.7813, d_loss: 0.6067
-[ADV] epoch 29: g_loss: 1.1703, d_loss: 0.3697

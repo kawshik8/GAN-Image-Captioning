@@ -10,7 +10,7 @@ from generator import *
 from discriminator import *
 import numpy as np
 
-class RelGANInstructor():
+class GANInstructor():
     def __init__(self, train_loader, dev_loader):
 
         # generator, discriminator
@@ -69,7 +69,7 @@ class RelGANInstructor():
     def genpretrain_loop(self, what):
 
         gen_loss = []
-        with (torch.grad() if what=='train' else torch.nograd()):
+        with (torch.enable_grad() if what=='train' else torch.nograd()):
             for batch_idx, (images, captions, lengths) in enumerate((self.train_loader if what=='train' else self.dev_loader)):
                 real_samples = captions 
                 self.gen_opt.zero_grad()
@@ -121,7 +121,7 @@ class RelGANInstructor():
     def adv_train_generator(self, g_step, what):
         total_loss = 0
         
-        with (torch.grad() if what=='train' else torch.nograd()):
+        with (torch.enable_grad() if what=='train' else torch.nograd()):
             for step in range(g_step):
                 gen_loss = []
                 for batch_idx, (images, captions, lengths) in enumerate((self.train_loader if what=='train' else self.dev_loader)):
@@ -153,7 +153,7 @@ class RelGANInstructor():
 
     def adv_train_discriminator(self, d_step, what):
         total_loss = 0
-        with (torch.grad() if what=='train' else torch.nograd()):
+        with (torch.enable_grad() if what=='train' else torch.nograd()):
             for step in range(d_step):
                 dis_loss = []
                 for batch_idx, (images, captions, lengths) in enumerate((self.train_loader if what=='train' else self.dev_loader)):
