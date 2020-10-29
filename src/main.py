@@ -30,7 +30,7 @@ if cfg.cuda:
 # train_data = [(images,captions,lengths)]
 
 coco_dataset = COCO_data("../../coco_data/dataset_coco.json","../../coco_data",'train')
-loader = DataLoader(coco_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn, num_workers=4)
+loader = DataLoader(coco_dataset, batch_size=64, shuffle=False, collate_fn=collate_fn, num_workers=4)
 #create a validation loader 
 
 # train_data = [(images,captions,lengths)]

@@ -69,11 +69,12 @@ class GANInstructor():
     def genpretrain_loop(self, what):
 
         gen_loss = []
-        with (torch.enable_grad() if what=='train' else torch.nograd()):
+        with (torch.enable_grad() if what=='train' else torch.nograd()), tqdm(total=(len(self.train_loader) if what=='train' else len(self.dev_loader))) as progress:
             for batch_idx, (images, captions, lengths) in enumerate((self.train_loader if what=='train' else self.dev_loader)):
                 real_samples = captions 
                 self.gen_opt.zero_grad()
-                
+                if cfg.cuda:
+                    images,captions,lengths = images.cuda(),captions.cuda(),lengths.cuda()               
                 gen_samples,_ = self.gen(images, captions, lengths)
                 if cfg.cuda:
                     real_samples, gen_samples = real_samples.cuda(), gen_samples.cuda()
@@ -90,7 +91,9 @@ class GANInstructor():
 
                 self.writer.add_scalar('GenPreTraining_train_loss' if what=='train' else 'GenPreTraining_val_loss',loss,self.pretrain_steps)
                 
-    
+                progress.update(1)
+                progress.set_postfix(loss=loss.item())        
+        
         return gen_loss
 
     def pretrain_generator(self, epochs):

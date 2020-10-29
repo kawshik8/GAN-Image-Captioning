@@ -1,7 +1,7 @@
 import torch
 
 #Data settings
-vocab_size = 6
+vocab_size = 23531
 max_seq_length=20
 padding_idx = 0
 
@@ -21,7 +21,7 @@ dis_init ='uniform'
 
 #Train settings
 ADV_train_epoch = 30
-PRETRAIN_EPOCHS = 30
+PRETRAIN_EPOCHS = 0#30
 ADV_g_step = 1
 ADV_d_step = 4
 if_save = True
