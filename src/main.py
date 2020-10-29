@@ -5,6 +5,7 @@ import numpy as np
 from training import GANInstructor
 from tasks import COCO_data, collate_fn
 from torch.utils.data import DataLoader
+from args import *
 
 # Set up random seed to 1008. Do not change the random seed.
 # Yes, these are all necessary when you run experiments!
@@ -18,7 +19,7 @@ if cfg.cuda:
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-
+args = get_args()
 # vocab = ["<pad>", "cat","on","the","mat","hello"]
 # images= torch.rand(2,3,64,64)
 # lengths = torch.tensor([5,6])
@@ -29,13 +30,13 @@ if cfg.cuda:
 
 # train_data = [(images,captions,lengths)]
 
-coco_dataset = COCO_data("../../coco_data/dataset_coco.json","../../coco_data",'train')
-loader = DataLoader(coco_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn, num_workers=4)
+train_dataset = COCO_data(args.data_dir,'train')
+val_dataset = COCO_data(args.data_dir,'val')
 #create a validation loader 
 
 # train_data = [(images,captions,lengths)]
 # val_data = [(images,captions,lengths)]
-inst = GANInstructor(loader,loader) #Pass the validation loader for second argument. 
+inst = GANInstructor(args, train_dataset, val_coco) #Pass the validation loader for second argument. 
 
 inst._run()
 #inst.evaluate(dataloader=val_data, isTest=True) #For testing still need to calculate accuracy.

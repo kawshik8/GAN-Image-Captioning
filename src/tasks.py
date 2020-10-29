@@ -68,6 +68,7 @@ class COCO_data(Dataset):
                             ]
                         )
         
+        self.vocab_size = len(list(self.word_to_index.keys()))
             
                          
     def __len__(self):
