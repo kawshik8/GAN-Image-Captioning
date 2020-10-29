@@ -76,6 +76,11 @@ def add_data_args():
 
     ################### NLP Part ###################
 
+    parser.add_argument('--vocab-size',
+                            type=int,
+                            default=-1,
+                            help='vocab size for training')
+
     parser.add_argument('--max-seq-len',
                             type=int,
                             default=20,

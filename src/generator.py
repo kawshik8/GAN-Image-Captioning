@@ -2,19 +2,19 @@ import torch
 import math
 import torch.nn as nn
 import torchvision.models as models
-import config as cfg
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 class Encoder(nn.Module):
-    def __init__(self):
+    def __init__(self, args):
         """Load the pretrained ResNet-152 and replace top fc layer."""
         super(Encoder, self).__init__()
         resnet = models.resnet18(pretrained=False)
         modules = list(resnet.children())[:-1]      # delete the last fc layer.
         self.resnet = nn.Sequential(*modules)
-        self.linear = nn.Linear(resnet.fc.in_features, cfg.embed_size)
-        self.bn = nn.BatchNorm1d(cfg.embed_size, momentum=0.01)
+        self.linear = nn.Linear(resnet.fc.in_features, args.gen_embed_size)
+        self.bn = nn.BatchNorm1d(args.gen_embed_size, momentum=0.01)
+        self.args = args
 
     def forward(self, images):
         """Extract feature vectors from input images."""
@@ -25,14 +25,15 @@ class Encoder(nn.Module):
         return features
 
 class Decoder(nn.Module):
-    def __init__(self):
+    def __init__(self, args):
         """Set the hyper-parameters and build the layers."""
         super(Decoder, self).__init__()
-        self.embed = nn.Embedding(cfg.vocab_size, cfg.embed_size)
-        self.lstm = nn.LSTM(cfg.embed_size, cfg.hidden_size, cfg.num_layers, batch_first=True)
-        self.linear = nn.Linear(cfg.hidden_size, cfg.vocab_size)
-        self.max_seg_length = cfg.max_seq_length
-        self.temperature = cfg.temperature
+        self.embed = nn.Embedding(args.vocab_size, args.embed_dim)
+        self.lstm = nn.LSTM(args.embed_dim, args.gen_hidden_dim, args.num_layers, batch_first=True)
+        self.linear = nn.Linear(args.hidden_dim, args.vocab_dim)
+        self.max_seg_length = args.max_seq_length
+        self.temperature = args.temperature
+        self.args = args
         
     def forward(self, features, caps, lengths):
         """Decode image feature vectors and generates captions."""
@@ -65,21 +66,24 @@ class Decoder(nn.Module):
     def add_gumbel(o_t, eps=1e-10, gpu=0):
         """Add o_t by a vector sampled from Gumbel(0,1)"""
         u = torch.zeros(o_t.size())
-        if gpu:
-            u = u.cuda()
+
+        u = u.to(self.args.device)
             
         u.uniform_(0, 1)
         g_t = -torch.log(-torch.log(u + eps) + eps)
-        if cfg.cuda: g_t = g_t.cuda()
+
+        g_t = g_t.to(self.args.device)
+
         gumbel_t = o_t + g_t
         return gumbel_t
 
 class Generator(nn.Module):
-    def __init__(self):
+    def __init__(self, args):
         """Load the pretrained ResNet-152 and replace top fc layer."""
         super(Generator, self).__init__()
-        self.encoder = Encoder()
-        self.decoder = Decoder()
+        self.encoder = Encoder(args)
+        self.decoder = Decoder(args)
+        self.args = args
         self.init_params()
         
     def forward(self, images, caps, lengths):
@@ -92,7 +96,7 @@ class Generator(nn.Module):
         for param in self.parameters():
             if param.requires_grad and len(param.shape) > 0:
                 stddev = 1 / math.sqrt(param.shape[0])
-                if cfg.gen_init == 'uniform':
+                if self.args.gen_init == 'uniform':
                     torch.nn.init.uniform_(param, a=-0.05, b=0.05)
-                elif cfg.gen_init == 'normal':
+                elif self.args.gen_init == 'normal':
                     torch.nn.init.normal_(param, std=stddev)
