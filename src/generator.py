@@ -12,8 +12,8 @@ class Encoder(nn.Module):
         resnet = models.resnet18(pretrained=False)
         modules = list(resnet.children())[:-1]      # delete the last fc layer.
         self.resnet = nn.Sequential(*modules)
-        self.linear = nn.Linear(resnet.fc.in_features, args.gen_embed_size)
-        self.bn = nn.BatchNorm1d(args.gen_embed_size, momentum=0.01)
+        self.linear = nn.Linear(resnet.fc.in_features, args.gen_embed_dim)
+        self.bn = nn.BatchNorm1d(args.gen_embed_dim, momentum=0.01)
         self.args = args
 
     def forward(self, images):
