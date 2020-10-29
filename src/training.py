@@ -54,12 +54,12 @@ class RelGANInstructor():
             self.update_temperature(adv_epoch, cfg.ADV_train_epoch)  # update temperature
     
             progress.set_description(
-                'g_loss: %.4f, d_loss: %.4f, temperature: %.4f' % (g_loss, d_loss, self.gen.decoder.temperature))
+                'g_loss: %.4f | %.4f , d_loss: %.4f | %.4f , temperature: %.4f' % (train_g_loss, val_g_loss, train_d_loss, val_d_loss, self.gen.decoder.temperature))
 
             # TEST
             if adv_epoch % cfg.adv_log_step == 0 or adv_epoch == cfg.ADV_train_epoch - 1:
-                self.log.info('[ADV] epoch %d: g_loss: %.4f, d_loss: %.4f' % (
-                    adv_epoch, g_loss, d_loss))
+                self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f' % (
+                    adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss))
 
                 # if cfg.if_save and not cfg.if_test:
                 #     self._save('ADV', adv_epoch)
@@ -88,7 +88,7 @@ class RelGANInstructor():
 
                 gen_loss.append(loss.item())
 
-                self.writer.add_scalar(f'GenPreTraining_{what}_loss',loss,self.pretrain_steps)
+                self.writer.add_scalar('GenPreTraining_train_loss' if what=='train' else 'GenPreTraining_val_loss',loss,self.pretrain_steps)
                 
     
         return gen_loss
@@ -143,7 +143,7 @@ class RelGANInstructor():
                     if what == 'train':
                         self.optimize(self.gen_adv_opt, g_loss, self.gen)
 
-                    self.writer.add_scalar(f'Generator_{what}_loss',g_loss,self.gen_steps)
+                    self.writer.add_scalar('Generator_train_loss' if what=='train' else 'Generator_val_loss',g_loss,self.gen_steps)
                     self.gen_steps+=1
                     gen_loss.append(g_loss.item())
 
@@ -176,7 +176,7 @@ class RelGANInstructor():
                     if what == 'train':
                         self.optimize(self.disc_opt, d_loss, self.disc)
 
-                    self.writer.add_scalar(f'Discriminator_{what}_loss',d_loss,self.disc_steps)
+                    self.writer.add_scalar('Discriminator_train_loss' if what=='train' else 'Discriminator_val_loss',d_loss,self.disc_steps)
                     self.disc_steps+=1
                     dis_loss.append(d_loss.item())
 
