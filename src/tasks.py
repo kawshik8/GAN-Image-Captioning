@@ -32,36 +32,42 @@ class COCO_data(Dataset):
         
 
         if os.path.exists(os.path.join(image_path, split + ".pkl")):
+            print("Loading from saved dict")
+
             saved_dict = pickle.load(open(os.path.join(image_path,split + ".pkl"),'rb'))
             self.captions = saved_dict['captions']
             self.word_to_index = saved_dict["w2i"]
             self.index_to_word = saved_dict["i2w"]
 
         else:
+            print("Creating and saving dict")
             self.captions = []
             
             t_captions = captions.copy()
-            for i,row in enumerate(t_captions):
-                if split not in row['filepath']:
-                    captions.remove(t_captions[i])
-                else:
+            with tqdm(total=len(t_captions)) as progress:
+                for i,row in enumerate(t_captions):
+                    if split not in row['filepath']:
+                        captions.remove(t_captions[i])
+                    else:
+                                
+                        for caption in row['sentences']:
+                            caption_dict = {}
+                            for key in row:
+                                if type(row[key]) != list:
+                                    caption_dict[key] = row[key]
                             
-                    for caption in row['sentences']:
-                        caption_dict = {}
-                        for key in row:
-                            if type(row[key]) != list:
-                                caption_dict[key] = row[key]
-                        
-                        for key in caption:
-                            caption_dict[key] = caption[key]
-                            
-                        self.captions.append(caption_dict)
-                            
-                        for word in caption['tokens']:
-                            if word not in self.word_to_index:
-                                curr_len = len(list(self.word_to_index.keys())) + 3
-                                self.word_to_index[word] = curr_len
-                                self.index_to_word[curr_len] = word
+                            for key in caption:
+                                caption_dict[key] = caption[key]
+                                
+                            self.captions.append(caption_dict)
+                                
+                            for word in caption['tokens']:
+                                if word not in self.word_to_index:
+                                    curr_len = len(list(self.word_to_index.keys())) + 3
+                                    self.word_to_index[word] = curr_len
+                                    self.index_to_word[curr_len] = word
+
+                progress.update(1)
 
             save_dict = {"captions":self.captions, "w2i": self.word_to_index, "i2w": self.index_to_word}
                 
