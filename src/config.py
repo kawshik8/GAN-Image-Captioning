@@ -26,7 +26,7 @@ ADV_g_step = 1
 ADV_d_step = 4
 if_save = True
 if_test = False
-val_freq = 1
+val_freq = 1000
 
 #Learning rates
 gen_lr = 1e-2
