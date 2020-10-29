@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 
-def get_losses(d_out_real, d_out_fake, loss_type='JS'):
+def get_losses(d_out_real, d_out_fake, g_out, loss_type='JS'):
     """Get different adversarial losses according to given loss_type"""
     bce_loss = nn.BCEWithLogitsLoss()
 
@@ -16,32 +16,32 @@ def get_losses(d_out_real, d_out_fake, loss_type='JS'):
         d_loss_fake = bce_loss(d_out_fake, torch.zeros_like(d_out_fake))
         d_loss = d_loss_real + d_loss_fake
 
-        g_loss = bce_loss(d_out_fake, torch.ones_like(d_out_fake))
+        g_loss = bce_loss(g_out, torch.ones_like(g_out))
 
     elif loss_type == 'JS':  # the vanilla GAN loss
         d_loss_real = bce_loss(d_out_real, torch.ones_like(d_out_real))
         d_loss_fake = bce_loss(d_out_fake, torch.zeros_like(d_out_fake))
         d_loss = d_loss_real + d_loss_fake
 
-        g_loss = -d_loss_fake
+        g_loss = -bce_loss(g_out, torch.zeros_like(g_out))
 
     elif loss_type == 'KL':  # the GAN loss implicitly minimizing KL-divergence
         d_loss_real = bce_loss(d_out_real, torch.ones_like(d_out_real))
         d_loss_fake = bce_loss(d_out_fake, torch.zeros_like(d_out_fake))
         d_loss = d_loss_real + d_loss_fake
 
-        g_loss = torch.mean(-d_out_fake)
+        g_loss = torch.mean(-g_out)
 
     elif loss_type == 'hinge':  # the hinge loss
         d_loss_real = torch.mean(nn.ReLU(1.0 - d_out_real))
         d_loss_fake = torch.mean(nn.ReLU(1.0 + d_out_fake))
         d_loss = d_loss_real + d_loss_fake
 
-        g_loss = -torch.mean(d_out_fake)
+        g_loss = -torch.mean(g_out)
 
     elif loss_type == 'tv':  # the total variation distance
         d_loss = torch.mean(nn.Tanh(d_out_fake) - nn.Tanh(d_out_real))
-        g_loss = torch.mean(-nn.Tanh(d_out_fake))
+        g_loss = torch.mean(-nn.Tanh(g_out))
 
     elif loss_type == 'rsgan':  # relativistic standard GAN
         d_loss = bce_loss(d_out_real - d_out_fake, torch.ones_like(d_out_real))
