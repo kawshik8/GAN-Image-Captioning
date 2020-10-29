@@ -46,6 +46,7 @@ class COCO_data(Dataset):
             t_captions = captions.copy()
             with tqdm(total=len(t_captions)) as progress:
                 for i,row in enumerate(t_captions):
+                    #print(i)
                     if split not in row['filepath']:
                         captions.remove(t_captions[i])
                     else:
@@ -67,7 +68,7 @@ class COCO_data(Dataset):
                                     self.word_to_index[word] = curr_len
                                     self.index_to_word[curr_len] = word
 
-                progress.update(1)
+                    progress.update(1)
 
             save_dict = {"captions":self.captions, "w2i": self.word_to_index, "i2w": self.index_to_word}
                 

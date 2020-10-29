@@ -28,10 +28,10 @@ class Decoder(nn.Module):
     def __init__(self, args):
         """Set the hyper-parameters and build the layers."""
         super(Decoder, self).__init__()
-        self.embed = nn.Embedding(args.vocab_size, args.embed_dim)
-        self.lstm = nn.LSTM(args.embed_dim, args.gen_hidden_dim, args.num_layers, batch_first=True)
-        self.linear = nn.Linear(args.hidden_dim, args.vocab_dim)
-        self.max_seg_length = args.max_seq_length
+        self.embed = nn.Embedding(args.vocab_size, args.gen_embed_dim)
+        self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True)
+        self.linear = nn.Linear(args.gen_hidden_dim, args.vocab_size)
+        self.max_seg_length = args.max_seq_len
         self.temperature = args.temperature
         self.args = args
         
