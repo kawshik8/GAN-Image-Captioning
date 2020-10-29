@@ -10,28 +10,28 @@ from generator import *
 from discriminator import *
 import numpy as np
 
-class GANInstructor():
-    def __init__(self, train_loader,val_loader):
+class RelGANInstructor():
+    def __init__(self, train_loader, dev_loader):
 
         # generator, discriminator
         self.gen = Generator().to(cfg.device)
-        self.dis = Discriminator().to(cfg.device)
+        self.disc = Discriminator().to(cfg.device)
         self.log = create_logger(__name__, silent=False, to_disk=True,
                                  log_file=cfg.log_filename if cfg.if_test
                                  else [cfg.log_filename, cfg.save_root + 'log.txt'])
         # Optimizer
         self.gen_opt = optim.Adam(self.gen.parameters(), lr=cfg.gen_lr)
         self.gen_adv_opt = optim.Adam(self.gen.parameters(), lr=cfg.gen_adv_lr)
-        self.dis_opt = optim.Adam(self.dis.parameters(), lr=cfg.dis_lr)
+        self.disc_opt = optim.Adam(self.disc.parameters(), lr=cfg.dis_lr)
         self.train_loader = train_loader
-        self.val_loader = val_loader
-
+        self.dev_loader = dev_loader
+        
         self.writer = SummaryWriter()
+        
+        self.pretrain_steps = 0
         self.gen_steps = 0
-        self.dis_steps = 0
-        self.valid_steps = 0
+        self.disc_steps = 0
 
-        self.progress = tqdm(range(cfg.ADV_train_epoch))
     # def __del__(self):
     #     self.writer.close()
 
@@ -42,74 +42,35 @@ class GANInstructor():
 
         # # ===ADVERSARIAL TRAINING===
         self.log.info('Starting Adversarial Training...')
-        # progress = tqdm(range(cfg.ADV_train_epoch))
-
-        for adv_epoch in self.progress:
-             self.train(adv_epoch)
-             if adv_epoch % cfg.val_freq == 0:
-                self.evaluate(self.val_loader,adv_epoch)
-
-        self.progress.close()
-
-    def train(self,adv_epoch):
-        self.gen.train()
-        self.dis.train()
-        g_loss = self.adv_train_generator(cfg.ADV_g_step)  # Generator
-        d_loss = self.adv_train_discriminator(cfg.ADV_d_step)  # Discriminator
-        self.update_temperature(adv_epoch, cfg.ADV_train_epoch)  # update temperature
-
-        self.progress.set_description(
-            'g_loss: %.4f, d_loss: %.4f, temperature: %.4f' % (g_loss, d_loss, self.gen.decoder.temperature))
-
-        # LOG
-        if adv_epoch % cfg.adv_log_step == 0 or adv_epoch == cfg.ADV_train_epoch - 1:
-            self.log.info('[ADV] epoch %d: g_loss: %.4f, d_loss: %.4f' % (adv_epoch, g_loss, d_loss))
-
-    def evaluate(self, dataloader, adv_epoch=0,isTest=False):
-        self.gen.eval()
-        self.dis.eval()
-
-        with torch.no_grad():
-            gen_loss = []
-            for batch_idx, (images, captions, lengths) in enumerate(dataloader):
-                
-                real_samples = captions  
-                gen_samples,_ = self.gen(images, captions, lengths)
-
-                if cfg.cuda:
-                    real_samples, gen_samples = real_samples.cuda(), gen_samples.cuda()
-
-                targets = pack_padded_sequence(real_samples, lengths, batch_first=True, enforce_sorted=False)[0]
-                outputs = pack_padded_sequence(gen_samples, lengths, batch_first=True, enforce_sorted=False)[0]      
-
-                criterion = nn.CrossEntropyLoss()
-                loss = torch.autograd.Variable(criterion(outputs, targets), requires_grad=True)
-
-                gen_loss.append(loss.item())
-
-                if isTest:
-                    if batch_idx % cfg.test_log_step == 0:
-                        self.log.info("Batch {}: {} ".format(batch_idx,loss.item()))
-
-                if not isTest: #If it is validation
-                    self.writer.add_scalar('Validation_loss',loss,self.valid_steps)
-                    self.valid_steps+=1
-
-            if not isTest:
-                self.log.info("Epoch {} validation_loss {}".format(adv_epoch, np.mean(gen_loss)))
-            else:
-                self.log.info("Test loss: {}".format(np.mean(gen_loss)))
-
-
-    
-    def pretrain_generator(self, epochs):
-        self.log.info("Pretraining Generator")
-        total_loss = 0
-        num_steps = 0
         progress = tqdm(range(cfg.ADV_train_epoch))
-        for epoch in progress:
-            gen_loss = []
-            for batch_idx, (images, captions, lengths) in enumerate(self.train_loader):
+
+        for adv_epoch in progress:
+            train_d_loss = self.adv_train_discriminator(cfg.ADV_d_step, 'train')  # Discriminator
+            val_d_loss = self.adv_train_discriminator(1, 'val')
+
+            train_g_loss = self.adv_train_generator(cfg.ADV_g_step,'train')  # Generator
+            val_g_loss = self.adv_train_generator(1,'val')
+
+            self.update_temperature(adv_epoch, cfg.ADV_train_epoch)  # update temperature
+    
+            progress.set_description(
+                'g_loss: %.4f, d_loss: %.4f, temperature: %.4f' % (g_loss, d_loss, self.gen.decoder.temperature))
+
+            # TEST
+            if adv_epoch % cfg.adv_log_step == 0 or adv_epoch == cfg.ADV_train_epoch - 1:
+                self.log.info('[ADV] epoch %d: g_loss: %.4f, d_loss: %.4f' % (
+                    adv_epoch, g_loss, d_loss))
+
+                # if cfg.if_save and not cfg.if_test:
+                #     self._save('ADV', adv_epoch)
+
+        progress.close()
+
+    def genpretrain_loop(self, what):
+
+        gen_loss = []
+        with (torch.grad() if what=='train' else torch.nograd()):
+            for batch_idx, (images, captions, lengths) in enumerate((self.train_loader if what=='train' else self.dev_loader)):
                 real_samples = captions 
                 self.gen_opt.zero_grad()
                 
@@ -122,79 +83,104 @@ class GANInstructor():
 
                 criterion = nn.CrossEntropyLoss()
                 loss = torch.autograd.Variable(criterion(outputs, targets), requires_grad=True)
-                self.optimize(self.gen_opt, loss, self.gen)
+                if what == 'train':
+                    self.optimize(self.gen_opt, loss, self.gen)
 
                 gen_loss.append(loss.item())
 
-                self.writer.add_scalar('PreTraining_loss',loss,num_steps)
-                num_steps+=1
+                self.writer.add_scalar(f'GenPreTraining_{what}_loss',loss,self.pretrain_steps)
+                
+    
+        return gen_loss
 
-            epoch_loss = np.mean(gen_loss)
+    def pretrain_generator(self, epochs):
+        print("Pretraining Generator")
+        total_loss = 0
+
+        progress = tqdm(range(cfg.ADV_train_epoch))
+        for epoch in progress:
+
+            gen_loss = self.genpretrain_loop('train')
+            train_epoch_loss = np.mean(gen_loss)       
+
+            total_loss += train_epoch_loss 
+
+            gen_loss = self.genpretrain_loop('val')
+            val_epoch_loss = np.mean(gen_loss)
+
             progress.set_description(
-                    'pretrain_gen_loss: %.4f' % (epoch_loss))
+                    'pretrain_val_gen_loss: %.4f, pretrain_val_gen_loss' % (train_epoch_loss, val_epoch_loss))
             
             if epoch%cfg.pre_log_step == 0:
-                self.log.info("Epoch {}: {} ".format(epoch,epoch_loss))
+                print("Epoch {}: \n \t Train: {} \n\t Val: {} ".format(epoch,train_epoch_loss,val_epoch_loss))
+
+            self.pretrain_steps+=1
 
         return total_loss/epochs
     
-    def adv_train_generator(self, g_step):
+    def adv_train_generator(self, g_step, what):
         total_loss = 0
-        for step in range(g_step):
-            gen_loss = []
-            for batch_idx, (images, captions, lengths) in enumerate(self.train_loader):
-                real_samples = captions #train_data -> (images,lengths,captions)
-                features = self.gen.encoder(images)
-                gen_samples = self.gen.decoder.sample(features)
+        
+        with (torch.grad() if what=='train' else torch.nograd()):
+            for step in range(g_step):
+                gen_loss = []
+                for batch_idx, (images, captions, lengths) in enumerate((self.train_loader if what=='train' else self.dev_loader)):
+                    real_samples = captions #train_data -> (images,lengths,captions)
+                    features = self.gen.encoder(images)
+                    gen_samples = self.gen.decoder.sample(features)
 
-                if cfg.cuda:
-                    real_samples, gen_samples = real_samples.cuda(), gen_samples.cuda()
+                    if cfg.cuda:
+                        real_samples, gen_samples = real_samples.cuda(), gen_samples.cuda()
 
-                real_samples = F.one_hot(real_samples, cfg.vocab_size).float()
-                gen_samples = F.one_hot(gen_samples, cfg.vocab_size).float()
+                    real_samples = F.one_hot(real_samples, cfg.vocab_size).float()
+                    gen_samples = F.one_hot(gen_samples, cfg.vocab_size).float()
 
-                # ===Train===
-                d_out_real = self.dis(real_samples)
-                d_out_fake = self.dis(gen_samples)
-                g_loss, _ = get_losses(d_out_real, d_out_fake, cfg.loss_type)
+                    # ===Train===
+                    d_out_real = self.disc(real_samples)
+                    d_out_fake = self.disc(gen_samples)
+                    g_loss, _ = get_losses(d_out_real, d_out_fake, cfg.loss_type)
 
-                self.optimize(self.gen_adv_opt, g_loss, self.gen)
+                    if what == 'train':
+                        self.optimize(self.gen_adv_opt, g_loss, self.gen)
 
-                self.writer.add_scalar('Generator_loss',g_loss,self.gen_steps)
-                self.gen_steps+=1
-                gen_loss.append(g_loss.item())
+                    self.writer.add_scalar(f'Generator_{what}_loss',g_loss,self.gen_steps)
+                    self.gen_steps+=1
+                    gen_loss.append(g_loss.item())
 
-            total_loss += np.mean(gen_loss)
+                total_loss += np.mean(gen_loss)
 
         return total_loss / g_step if g_step != 0 else 0
 
-    def adv_train_discriminator(self, d_step):
+    def adv_train_discriminator(self, d_step, what):
         total_loss = 0
-        for step in range(d_step):
-            dis_loss = []
-            for batch_idx, (images, captions, lengths) in enumerate(self.train_loader):
-                real_samples = captions
-                features = self.gen.encoder(images)
-                gen_samples = self.gen.decoder.sample(features)
+        with (torch.grad() if what=='train' else torch.nograd()):
+            for step in range(d_step):
+                dis_loss = []
+                for batch_idx, (images, captions, lengths) in enumerate((self.train_loader if what=='train' else self.dev_loader)):
+                    real_samples = captions
 
-                if cfg.cuda:
-                    real_samples, gen_samples = real_samples.cuda(), gen_samples.cuda()
+                    features = self.gen.encoder(images)
+                    gen_samples = self.gen.decoder.sample(features).detach()
 
-                real_samples = F.one_hot(real_samples, cfg.vocab_size).float()
-                gen_samples = F.one_hot(gen_samples, cfg.vocab_size).float()
+                    if cfg.cuda:
+                        real_samples, gen_samples = real_samples.cuda(), gen_samples.cuda()
 
-                # ===Train===
-                d_out_real = self.dis(real_samples)
-                d_out_fake = self.dis(gen_samples)
-                _, d_loss = get_losses(d_out_real, d_out_fake, cfg.loss_type)
+                    real_samples = F.one_hot(real_samples, cfg.vocab_size).float()
+                    gen_samples = F.one_hot(gen_samples, cfg.vocab_size).float()
 
-                self.optimize(self.dis_opt, d_loss, self.dis)
+                    # ===Train===
+                    d_out_real = self.disc(real_samples)
+                    d_out_fake = self.disc(gen_samples)
+                    _, d_loss = get_losses(d_out_real, d_out_fake, cfg.loss_type)
 
-                self.writer.add_scalar('Discriminator_loss',d_loss,self.dis_steps)
-                self.dis_steps+=1
-                dis_loss.append(d_loss.item())
+                    if what == 'train':
+                        self.optimize(self.disc_opt, d_loss, self.disc)
 
-            total_loss += np.mean(dis_loss)
+                    self.writer.add_scalar(f'Discriminator_{what}_loss',d_loss,self.disc_steps)
+                    self.disc_steps+=1
+                    dis_loss.append(d_loss.item())
+
+                total_loss += np.mean(dis_loss)
 
         return total_loss / d_step if d_step != 0 else 0
 
@@ -208,5 +194,3 @@ class GANInstructor():
         if model is not None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.clip_norm)
         opt.step()
-            
-       

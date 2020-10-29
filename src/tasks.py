@@ -111,12 +111,13 @@ def collate_fn(batch):
     max_caption_len += 2
                 
     captions = torch.zeros(len(batch), max_caption_len)
+    lengths = torch.zeros_like(captions)
     
     for i in range(len(batch)):
         curr_len = len(batch[i][1])
         captions[i] = torch.LongTensor([1] + batch[i][1] + [2] + [0]*(max_caption_len - curr_len - 2))
     
-    return images, captions
+    return images, captions, lengths
 
 if __name__ == '__main__':
      
