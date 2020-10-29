@@ -1,3 +1,4 @@
+import torch
 import os 
 import argparse 
 
@@ -243,10 +244,20 @@ def get_args():
 
     args = parser.parse_args()
 
+    expt_no = 1
+    if os.path.exists(os.path.join(args.save_dir, args.expt_name + "_" + str(expt_no))):
+        while os.path.exists(os.path.join(args.save_dir, args.expt_name + "_" + str(expt_no))):
+            expt_no += 1
+            print(expt_no)
+ 
+    args.expt_name = args.expt_name + "_" + str(expt_no)
+
     args.save_dir = os.path.join(args.save_dir, args.expt_name)
+    os.mkdir(args.save_dir)
     args.model_dir = os.path.join(args.save_dir, args.model_dir)
-    args.log_file = os.path.join(args.save_dir, args.log_file)
-    
+    os.mkdir(args.model_dir)
+    args.log_file = os.path.join(args.save_dir, args.log_file)    
+
     if args.device == 'cuda' and torch.cuda.is_available():
         args.device = torch.device("cuda:0")#{args.device_ids}")
     else:
