@@ -33,11 +33,11 @@ if torch.cuda.is_available():
 
 # train_data = [(images,captions,lengths)]
 
-train_dataset = COCO_data(args.data_dir + "/dataset_coco.json", args.data_dir, 'train', args.image_size)
+train_dataset = COCO_data(args.data_dir + "/dataset_coco.json", args.data_dir, 'train', args.image_size, args.captions_per_image)
 
 args.vocab_size = train_dataset.vocab_size
 
-val_dataset = COCO_data(args.data_dir + "/dataset_coco.json", args.data_dir, 'val',args.image_size)
+val_dataset = COCO_data(args.data_dir + "/dataset_coco.json", args.data_dir, 'val',args.image_size, args.captions_per_image)
 
 #create a validation loader 
 

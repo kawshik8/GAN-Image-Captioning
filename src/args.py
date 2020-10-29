@@ -95,6 +95,11 @@ def add_data_args(parser):
                             default=256,
                             help='resize dim of images')
 
+    parser.add_argument('--captions-per-image',
+                            type=int,
+                            default=1,
+                            help='no of captions to use per image')
+
 
 
     #args = parser.parse_args()

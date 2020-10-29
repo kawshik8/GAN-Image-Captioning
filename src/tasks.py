@@ -16,7 +16,7 @@ from tqdm import tqdm
 import pickle
 
 class COCO_data(Dataset):
-    def __init__(self, captions_path, image_path, split, image_size=256):
+    def __init__(self, captions_path, image_path, split, image_size=256, captions_per_image=5):
         
         assert split in {'train','val','test'}
 
@@ -31,10 +31,10 @@ class COCO_data(Dataset):
         captions = json_file['images']
         
 
-        if os.path.exists(os.path.join(image_path, split + ".pkl")):
+        if os.path.exists(os.path.join(image_path, split + "_" + str(captions_per_image) + ".pkl")):
             print("Loading from saved dict")
 
-            saved_dict = pickle.load(open(os.path.join(image_path,split + ".pkl"),'rb'))
+            saved_dict = pickle.load(open(os.path.join(image_path,split + "_" + str(captions_per_image) + ".pkl"),'rb'))
             self.captions = saved_dict['captions']
             self.word_to_index = saved_dict["w2i"]
             self.index_to_word = saved_dict["i2w"]
@@ -51,7 +51,7 @@ class COCO_data(Dataset):
                         captions.remove(t_captions[i])
                     else:
                                 
-                        for caption in row['sentences']:
+                        for caption in row['sentences'][:captions_per_image]:
                             caption_dict = {}
                             for key in row:
                                 if type(row[key]) != list:
@@ -72,7 +72,7 @@ class COCO_data(Dataset):
 
             save_dict = {"captions":self.captions, "w2i": self.word_to_index, "i2w": self.index_to_word}
                 
-            pickle.dump(save_dict, open(os.path.join(image_path,split + ".pkl"),'wb+'))
+            pickle.dump(save_dict, open(os.path.join(image_path,split + "_" + str(captions_per_image) + ".pkl"),'wb+'))
                          
                          
         self.image_size = image_size
