@@ -31,11 +31,11 @@ if cfg.cuda:
 
 coco_dataset = COCO_data("../../coco_data/dataset_coco.json","../../coco_data",'train')
 loader = DataLoader(coco_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn, num_workers=4)
-
+#create a validation loader 
 
 # train_data = [(images,captions,lengths)]
 # val_data = [(images,captions,lengths)]
-inst = GANInstructor(loader,loader)
+inst = GANInstructor(loader,loader) #Pass the validation loader for second argument. 
 
 inst._run()
-#inst.evaluate(dataloader=val_data, isTest=True)
+#inst.evaluate(dataloader=val_data, isTest=True) #For testing still need to calculate accuracy.
