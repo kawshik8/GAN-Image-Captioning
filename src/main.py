@@ -2,7 +2,7 @@ import config as cfg
 import torch
 import random
 import numpy as np
-from training import RelGANInstructor
+from training import GANInstructor
 # Set up random seed to 1008. Do not change the random seed.
 # Yes, these are all necessary when you run experiments!
 seed = 1008
@@ -25,5 +25,7 @@ captions[1] = torch.cat((torch.tensor([3,2,4,4,1,5]).long(), torch.zeros(14).lon
 captions = captions.to(torch.long)
 
 train_data = [(images,captions,lengths)]
-inst = RelGANInstructor(train_data)
+val_data = [(images,captions,lengths)]
+inst = GANInstructor(train_data, val_data)
 inst._run()
+inst.evaluate(dataloader=val_data, isTest=True)

@@ -10,8 +10,8 @@ from generator import *
 from discriminator import *
 import numpy as np
 
-class RelGANInstructor():
-    def __init__(self, train_loader):
+class GANInstructor():
+    def __init__(self, train_loader,val_loader):
 
         # generator, discriminator
         self.gen = Generator().to(cfg.device)
@@ -24,11 +24,14 @@ class RelGANInstructor():
         self.gen_adv_opt = optim.Adam(self.gen.parameters(), lr=cfg.gen_adv_lr)
         self.dis_opt = optim.Adam(self.dis.parameters(), lr=cfg.dis_lr)
         self.train_loader = train_loader
-        
+        self.val_loader = val_loader
+
         self.writer = SummaryWriter()
         self.gen_steps = 0
         self.dis_steps = 0
+        self.valid_steps = 0
 
+        self.progress = tqdm(range(cfg.ADV_train_epoch))
     # def __del__(self):
     #     self.writer.close()
 
@@ -39,28 +42,68 @@ class RelGANInstructor():
 
         # # ===ADVERSARIAL TRAINING===
         self.log.info('Starting Adversarial Training...')
-        progress = tqdm(range(cfg.ADV_train_epoch))
+        # progress = tqdm(range(cfg.ADV_train_epoch))
 
-        for adv_epoch in progress:
-                g_loss = self.adv_train_generator(cfg.ADV_g_step)  # Generator
-                d_loss = self.adv_train_discriminator(cfg.ADV_d_step)  # Discriminator
-                self.update_temperature(adv_epoch, cfg.ADV_train_epoch)  # update temperature
-     
-                progress.set_description(
-                    'g_loss: %.4f, d_loss: %.4f, temperature: %.4f' % (g_loss, d_loss, self.gen.decoder.temperature))
+        for adv_epoch in self.progress:
+             self.train(adv_epoch)
+             if adv_epoch % cfg.val_freq == 0:
+                self.evaluate(self.val_loader,adv_epoch)
 
-                # TEST
-                if adv_epoch % cfg.adv_log_step == 0 or adv_epoch == cfg.ADV_train_epoch - 1:
-                    self.log.info('[ADV] epoch %d: g_loss: %.4f, d_loss: %.4f' % (
-                        adv_epoch, g_loss, d_loss))
+        self.progress.close()
 
-                    # if cfg.if_save and not cfg.if_test:
-                    #     self._save('ADV', adv_epoch)
+    def train(self,adv_epoch):
+        self.gen.train()
+        self.dis.train()
+        g_loss = self.adv_train_generator(cfg.ADV_g_step)  # Generator
+        d_loss = self.adv_train_discriminator(cfg.ADV_d_step)  # Discriminator
+        self.update_temperature(adv_epoch, cfg.ADV_train_epoch)  # update temperature
 
-        progress.close()
+        self.progress.set_description(
+            'g_loss: %.4f, d_loss: %.4f, temperature: %.4f' % (g_loss, d_loss, self.gen.decoder.temperature))
+
+        # LOG
+        if adv_epoch % cfg.adv_log_step == 0 or adv_epoch == cfg.ADV_train_epoch - 1:
+            self.log.info('[ADV] epoch %d: g_loss: %.4f, d_loss: %.4f' % (adv_epoch, g_loss, d_loss))
+
+    def evaluate(self, dataloader, adv_epoch=0,isTest=False):
+        self.gen.eval()
+        self.dis.eval()
+
+        with torch.no_grad():
+            gen_loss = []
+            for batch_idx, (images, captions, lengths) in enumerate(dataloader):
+                
+                real_samples = captions  
+                gen_samples,_ = self.gen(images, captions, lengths)
+
+                if cfg.cuda:
+                    real_samples, gen_samples = real_samples.cuda(), gen_samples.cuda()
+
+                targets = pack_padded_sequence(real_samples, lengths, batch_first=True, enforce_sorted=False)[0]
+                outputs = pack_padded_sequence(gen_samples, lengths, batch_first=True, enforce_sorted=False)[0]      
+
+                criterion = nn.CrossEntropyLoss()
+                loss = torch.autograd.Variable(criterion(outputs, targets), requires_grad=True)
+
+                gen_loss.append(loss.item())
+
+                if isTest:
+                    if batch_idx % cfg.test_log_step == 0:
+                        self.log.info("Batch {}: {} ".format(batch_idx,loss.item()))
+
+                if not isTest: #If it is validation
+                    self.writer.add_scalar('Validation_loss',loss,self.valid_steps)
+                    self.valid_steps+=1
+
+            if not isTest:
+                self.log.info("Epoch {} validation_loss {}".format(adv_epoch, np.mean(gen_loss)))
+            else:
+                self.log.info("Test loss: {}".format(np.mean(gen_loss)))
+
+
     
     def pretrain_generator(self, epochs):
-        print("Pretraining Generator")
+        self.log.info("Pretraining Generator")
         total_loss = 0
         num_steps = 0
         progress = tqdm(range(cfg.ADV_train_epoch))
@@ -91,7 +134,8 @@ class RelGANInstructor():
                     'pretrain_gen_loss: %.4f' % (epoch_loss))
             
             if epoch%cfg.pre_log_step == 0:
-                print("Epoch {}: {} ".format(epoch,epoch_loss))
+                self.log.info("Epoch {}: {} ".format(epoch,epoch_loss))
+
         return total_loss/epochs
     
     def adv_train_generator(self, g_step):

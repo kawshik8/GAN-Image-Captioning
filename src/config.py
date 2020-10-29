@@ -26,6 +26,7 @@ ADV_g_step = 1
 ADV_d_step = 4
 if_save = True
 if_test = False
+val_freq = 1
 
 #Learning rates
 gen_lr = 1e-2
@@ -42,6 +43,7 @@ clip_norm = 5.0
 #Log settings
 adv_log_step = 20
 pre_log_step = 20
+test_log_step = 1
 save_root ='./logger/'
 log_filename = 'log'
 
