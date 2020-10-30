@@ -24,11 +24,11 @@ class GANInstructor():
         self.gen_opt = optim.Adam(self.gen.parameters(), lr=args.gen_lr)
         self.disc_opt = optim.Adam(self.disc.parameters(), lr=args.disc_lr)
 
-        self.pre_train_loader = DataLoader(train_dataset, batch_size=args.pre_train_batch_size, collate_fn=collate_fn)
-        self.pre_dev_loader = DataLoader(dev_dataset, batch_size=args.pre_eval_batch_size, collate_fn=collate_fn)
+        self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, collate_fn=collate_fn, num_workers=4)
+        self.pre_dev_loader = DataLoader(dev_dataset, batch_size=args.pre_eval_batch_size, collate_fn=collate_fn, num_workers=4)
 
-        self.adv_train_loader = DataLoader(train_dataset, batch_size=args.adv_train_batch_size, collate_fn=collate_fn)
-        self.adv_dev_loader = DataLoader(dev_dataset, batch_size=args.adv_eval_batch_size, collate_fn=collate_fn)
+        self.adv_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.adv_train_batch_size, collate_fn=collate_fn, num_workers=4)
+        self.adv_dev_loader = DataLoader(dev_dataset, batch_size=args.adv_eval_batch_size, collate_fn=collate_fn, num_workers=4)
        
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset

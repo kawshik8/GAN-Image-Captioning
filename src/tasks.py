@@ -68,6 +68,13 @@ class COCO_data(Dataset):
                                     self.word_to_index[word] = curr_len
                                     self.index_to_word[curr_len] = word
 
+                        self.word_to_index['<PAD>'] = 0
+                        self.word_to_index['<S>'] = 1
+                        self.word_to_index['<E>'] = 2
+                        self.index_to_word[0] = '<PAD>'
+                        self.index_to_word[1] = '<S>'
+                        self.index_to_word[2] = '<E>'
+
                     progress.update(1)
 
             save_dict = {"captions":self.captions, "w2i": self.word_to_index, "i2w": self.index_to_word}
@@ -131,12 +138,12 @@ def collate_fn(batch):
     max_caption_len += 2
                 
     captions = torch.zeros(len(batch), max_caption_len).type(torch.long)
-    lengths = torch.zeros(len(batch)).type(torch.long)
+    lengths = torch.zeros(len(batch)).type(torch.int)
     
     for i in range(len(batch)):
         curr_len = len(batch[i][1])
         captions[i] = torch.LongTensor([1] + batch[i][1] + [2] + [0]*(max_caption_len - curr_len - 2))
-        lengths[i] = curr_len        
+        lengths[i] = curr_len + 2        
 
     return images, captions, lengths
 

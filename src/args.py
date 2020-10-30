@@ -254,7 +254,7 @@ def get_args():
     if os.path.exists(os.path.join(args.save_dir, args.expt_name + "_" + str(expt_no))):
         while os.path.exists(os.path.join(args.save_dir, args.expt_name + "_" + str(expt_no))):
             expt_no += 1
-            print(expt_no)
+#            print(expt_no)
  
     args.expt_name = args.expt_name + "_" + str(expt_no)
 
