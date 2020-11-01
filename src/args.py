@@ -11,18 +11,18 @@ def add_model_args(parser):
 
     parser.add_argument('--gen-hidden-dim',
                             type=int,
-                            default=1024,
-                            help='hidden dimension of discriminator')
+                            default=512,
+                            help='hidden dimension of generator')
 
     parser.add_argument('--gen-embed-dim',
                             type=int,
-                            default=100,
-                            help='embedding dimension of discriminator')
+                            default=512,
+                            help='embedding dimension of generator')
 
     parser.add_argument('--gen-num-layers',
                             type=int,
                             default=2,
-                            help='number of layers in discriminator')
+                            help='number of layers in generator')
 
     parser.add_argument('--gen-init',
                             type=str,
@@ -31,14 +31,9 @@ def add_model_args(parser):
 
     ################### Discriminator ###################
 
-    parser.add_argument('--disc-hidden-dim',
-                            type=int,
-                            default=64,
-                            help='hidden dimension of discriminator')
-
     parser.add_argument('--disc-embed-dim',
                             type=int,
-                            default=64,
+                            default=512,
                             help='embeddings dimension to use in discriminator')
 
     parser.add_argument('--disc-num-rep',

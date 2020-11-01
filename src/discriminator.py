@@ -38,14 +38,25 @@ class Discriminator(nn.Module):
         :return logits: [batch_size * num_rep] (1-D tensor)
         """
         emb = self.embeddings(inp).unsqueeze(1)  # batch_size * 1 * max_seq_len * embed_dim
+        # print(emb.shape)
         cons = [F.relu(conv(emb)) for conv in self.convs]  # [batch_size * num_filter * (seq_len-k_h+1) * num_rep]
+        # for con in cons:
+        #     print(con.shape)
         pools = [F.max_pool2d(con, (con.size(2), 1)).squeeze(2) for con in cons]  # [batch_size * num_filter * num_rep]
+        # for pool in pools:
+        #     print(pool.shape)
+        # print(pools.shape)
         pred = torch.cat(pools, 1)
+        # print(pred.shape)
         pred = pred.permute(0, 2, 1).contiguous().view(-1, self.feature_dim)  # (batch_size * num_rep) * feature_dim
+        # print(pred.shape)
         highway = self.highway(pred)
+        # print(highway.shape)
         pred = torch.sigmoid(highway) * F.relu(highway) + (1. - torch.sigmoid(highway)) * pred  # highway
+        # print(pred.shape)
 
         pred = self.feature2out(self.dropout(pred))
+        # print(pred.shape)
         logits = self.out2logits(pred).squeeze(1)  # [batch_size * num_rep]
 
         return logits
@@ -73,4 +84,21 @@ class Discriminator(nn.Module):
                     torch.nn.init.uniform_(param, a=-0.05, b=0.05)
                 elif self.args.disc_init == 'normal':
                     torch.nn.init.normal_(param, std=stddev)
+
+
+if __name__=='__main__':
+    from args import get_args
+
+    args = get_args()
+    discriminator = Discriminator(args)
+
+    b = 16
+    real_captions = F.one_hot(torch.ones(b,34,dtype=torch.long),args.vocab_size).float().to(args.device)
+    fake_captions = torch.rand(b,34,args.vocab_size).to(args.device)
+    print(real_captions.shape, fake_captions.shape)
+
+    real_pred = discriminator(real_captions)
+    fake_pred = discriminator(fake_captions)
+    print("output fake and real : ",fake_pred.shape, real_pred.shape)
+
 

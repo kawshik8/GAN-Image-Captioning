@@ -106,7 +106,10 @@ class Generator(nn.Module):
         
     def forward(self, images, caps, lengths, pretrain=False):
         """Extract feature vectors from input images."""
-        features = self.encoder(images)
+        if self.args.cgan:
+            features = self.encoder(images)
+        else:
+            features = self.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
         pred, hidden = self.decoder(features, caps, lengths, pretrain)
         return pred, hidden
 
@@ -118,3 +121,29 @@ class Generator(nn.Module):
                     torch.nn.init.uniform_(param, a=-0.05, b=0.05)
                 elif self.args.gen_init == 'normal':
                     torch.nn.init.normal_(param, std=stddev)
+
+if __name__=='__main__':
+    from args import get_args
+
+    args = get_args()
+    generator = Generator(args)
+
+    b = 16
+    sample_images = torch.rand(b,3,256,256, dtype=torch.float).to(args.device)
+    sample_captions = torch.ones(b,34, dtype=torch.long).to(args.device)
+    sample_lengths = (torch.ones(b, dtype=torch.long)*34).to(args.device)
+
+    if args.conditional_gan:
+        features = generator.encoder(sample_images)
+        print("image features: ",features.shape)
+    else:
+        features = generator.decoder.embed(torch.ones(b,1, dtype=torch.long).squeeze(1).to(args.device))
+        print("start token features: ",features.shape)
+
+    
+    pretrain_pred,_ = generator.decoder.sample(features, pretrain=True)
+
+    adv_pred,_ = generator.decoder.sample(features)
+
+    print(features.shape, pretrain_pred.shape, adv_pred.shape)
+

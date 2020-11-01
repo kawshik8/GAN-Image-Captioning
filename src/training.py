@@ -92,6 +92,8 @@ class GANInstructor():
                 
                 if self.cgan:
                     features = self.gen.encoder(images)
+                else:
+                    features = self.gen.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
 #                 fake_samples = self.gen.decoder.sample(features)
          
                 gen_samples, _ = self.gen.decoder.sample(features, pretrain=True, max_caption_len=max_caption_len)
@@ -158,6 +160,8 @@ class GANInstructor():
                 # self.gen_opt.zero_grad()
                 if self.cgan:
                     features = self.gen.encoder(images)
+                else:
+                    features = self.gen.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
 #                 fake_samples = self.gen.decoder.sample(features)
          
                 gen_samples, _ = self.gen.decoder.sample(features, max_caption_len=max_caption_len)
