@@ -25,10 +25,10 @@ class GANInstructor():
         self.disc_opt = optim.Adam(self.disc.parameters(), lr=args.disc_lr)
 
         self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, collate_fn=collate_fn, num_workers=4)
-        self.pre_dev_loader = DataLoader(dev_dataset, batch_size=args.pre_eval_batch_size, collate_fn=collate_fn, num_workers=4)
+        self.pre_eval_loader = DataLoader(dev_dataset, batch_size=args.pre_eval_batch_size, collate_fn=collate_fn, num_workers=4)
 
         self.adv_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.adv_train_batch_size, collate_fn=collate_fn, num_workers=4)
-        self.adv_dev_loader = DataLoader(dev_dataset, batch_size=args.adv_eval_batch_size, collate_fn=collate_fn, num_workers=4)
+        self.adv_eval_loader = DataLoader(dev_dataset, batch_size=args.adv_eval_batch_size, collate_fn=collate_fn, num_workers=4)
        
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
@@ -40,6 +40,7 @@ class GANInstructor():
         self.disc_steps = 0
 
         self.args = args
+        self.cgan = (self.args.conditional_gan==1)
 
     # def __del__(self):
     #     self.writer.close()
@@ -51,9 +52,9 @@ class GANInstructor():
 
         # # ===ADVERSARIAL TRAINING===
         self.log.info('Starting Adversarial Training...')
-        progress = tqdm(range(self.args.adv_epochs))
+#         progress = tqdm(range(self.args.adv_epochs))
 
-        for adv_epoch in progress:
+        for adv_epoch in range(self.args.adv_epochs):
             self.disc.train()
             self.gen.train()
             train_g_loss, train_d_loss = self.adv_loop('train')  # Discriminator
@@ -64,9 +65,6 @@ class GANInstructor():
 
             self.update_temperature(adv_epoch, self.args.adv_epochs)  # update temperature
     
-            progress.set_description(
-                'g_loss: %.4f | %.4f , d_loss: %.4f | %.4f , temperature: %.4f' % (train_g_loss, val_g_loss, train_d_loss, val_d_loss, self.gen.decoder.temperature))
-
             # TEST
             if adv_epoch % self.args.adv_log_step == 0 or adv_epoch == self.args.adv_epochs - 1:
                 self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f' % (
@@ -75,31 +73,38 @@ class GANInstructor():
                 # if cfg.if_save and not cfg.if_test:
                 #     self._save('ADV', adv_epoch)
 
-        progress.close()
-
     def genpretrain_loop(self, what):
 
         gen_loss = []
 
-        with (torch.enable_grad() if what=='train' else torch.nograd()), tqdm(total = (len(self.train_dataset) if what=='train' else len(self.dev_dataset))) as progress:
-            for batch_idx, (images, captions, lengths) in enumerate((self.pre_train_loader if what=='train' else self.pre_eval_loader)):
-
+        with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total = (len(self.train_dataset) if what=='train' else len(self.dev_dataset))) as progress:
+            for batch_idx, (images, captions, lengths, max_caption_len) in enumerate((self.pre_train_loader if what=='train' else self.pre_eval_loader)):
+                
+#                 print((self.pre_train_loader if what=='train' else self.pre_eval_loader).dataset.vocab_size, flush=True)
+#                 print(captions, flush=True)
+#                 print(lengths, flush=True)
+                
                 images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)
                 real_samples = captions 
                 # self.pretrain_opt.zero_grad()
 
                 #images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)              
                 
-                gen_samples,_ = self.gen(images, captions, lengths)
+                if self.cgan:
+                    features = self.gen.encoder(images)
+#                 fake_samples = self.gen.decoder.sample(features)
+         
+                gen_samples, _ = self.gen.decoder.sample(features, pretrain=True, max_caption_len=max_caption_len)
 
                 real_samples, gen_samples = real_samples.to(self.args.device), gen_samples.to(self.args.device)
-
-                targets = pack_padded_sequence(real_samples, lengths, batch_first=True, enforce_sorted=False)[0]
-                outputs = pack_padded_sequence(gen_samples, lengths, batch_first=True, enforce_sorted=False)[0]      
+#                 print(gen_samples.shape, real_samples.shape)
+#                 targets = pack_padded_sequence(real_samples, lengths, batch_first=True, enforce_sorted=False)[0]
+#                 outputs = pack_padded_sequence(gen_samples, lengths, batch_first=True, enforce_sorted=False)[0]      
 
                 criterion = nn.CrossEntropyLoss()
+    
+                loss = criterion(gen_samples.view(-1,gen_samples.size(-1)), real_samples.view(-1))
 
-                loss = criterion(outputs, targets)
                 #print(loss)
 
                 if what == 'train':
@@ -129,9 +134,6 @@ class GANInstructor():
             self.gen.eval()
             gen_loss = self.genpretrain_loop('val')
             val_epoch_loss = np.mean(gen_loss)
-
-            progress.set_description(
-                    'pretrain_val_gen_loss: %.4f, pretrain_val_gen_loss' % (train_epoch_loss, val_epoch_loss))
             
             if epoch%self.args.pre_log_step == 0:
                 print("Epoch {}: \n \t Train: {} \n\t Val: {} ".format(epoch,train_epoch_loss,val_epoch_loss))
@@ -144,27 +146,31 @@ class GANInstructor():
         total_gen_loss = 0
         total_disc_loss = 0
         
-        with (torch.enable_grad() if what=='train' else torch.nograd()), tqdm(total=(len(self.train_dataset) if what == 'train' else len(self.dev_dataset))) as progress:
+        with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total=(len(self.train_dataset) if what == 'train' else len(self.dev_dataset))) as progress:
             gen_loss = []
             disc_loss = []
-            for batch_idx, (images, captions, lengths) in enumerate((self.adv_train_loader if what=='train' else self.adv_eval_loader)):
+            for batch_idx, (images, captions, lengths, max_caption_len) in enumerate((self.adv_train_loader if what=='train' else self.adv_eval_loader)):
         
                 images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)
                 real_samples = captions #train_data -> (images,lengths,captions)
           
                 # self.disc_opt.zero_grad()
                 # self.gen_opt.zero_grad()
-                features = self.gen.encoder(images)
-                gen_samples = self.gen.decoder.sample(features)
+                if self.cgan:
+                    features = self.gen.encoder(images)
+#                 fake_samples = self.gen.decoder.sample(features)
+         
+                gen_samples, _ = self.gen.decoder.sample(features, max_caption_len=max_caption_len)
+                fake_samples = gen_samples.detach()
 
-                real_samples, gen_samples = real_samples.to(self.args.device), gen_samples.to(self.args.device)
+                fake_samples = fake_samples.to(self.args.device)
 
                 real_samples = F.one_hot(real_samples, self.args.vocab_size).float()
-                gen_samples = F.one_hot(gen_samples, self.args.vocab_size).float()
+#                 fake_samples = F.one_hot(fake_samples, self.args.vocab_size).float()
 
                 # ===Train===
                 d_out_real = self.disc(real_samples)
-                d_out_fake = self.disc(gen_samples.detach())
+                d_out_fake = self.disc(fake_samples)
                 g_out = self.disc(gen_samples)
                 g_loss, d_loss = get_losses(d_out_real, d_out_fake, g_out, self.args.adv_loss_type)
 

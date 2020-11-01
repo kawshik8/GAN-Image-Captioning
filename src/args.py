@@ -60,6 +60,14 @@ def add_model_args(parser):
                             type=str,
                             default='uniform',
                             help='init strategy for discriminator weights')
+    
+    #################### Common args #####################
+    
+    parser.add_argument('--conditional-gan',
+                            type=int,
+                            default=0,
+                            choices = [0,1],
+                            help='is the gan conditional?')
                        
     #args = parser.parse_args()
 
@@ -79,7 +87,7 @@ def add_data_args(parser):
 
     parser.add_argument('--max-seq-len',
                             type=int,
-                            default=20,
+                            default=34,
                             help='maximum sequence length of captions')
 
     parser.add_argument('--padding-idx',
@@ -99,8 +107,13 @@ def add_data_args(parser):
                             type=int,
                             default=1,
                             help='no of captions to use per image')
+    
+    ################### Common Part ###################
 
-
+    parser.add_argument('--dataset_percent',
+                            type=float,
+                            default=1.0,
+                            help='percentage of dataset to use for training')
 
     #args = parser.parse_args()
 
@@ -166,7 +179,7 @@ def add_training_args(parser):
 
     parser.add_argument('--adv-loss-type',
                             type=str,
-                            default='rsgan',
+                            default='standard',
                             help='Loss function to use for adversarial training')
 
     parser.add_argument('--temperature',

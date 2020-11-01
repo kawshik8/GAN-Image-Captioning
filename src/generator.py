@@ -31,12 +31,12 @@ class Decoder(nn.Module):
         self.embed = nn.Embedding(args.vocab_size, args.gen_embed_dim)
         self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True)
         self.linear = nn.Linear(args.gen_hidden_dim, args.vocab_size)
-        self.max_seg_length = args.max_seq_len
+        self.max_seq_length = args.max_seq_len
         self.temperature = args.temperature
         self.args = args
         #self.device = args.device
         
-    def forward(self, features, caps, lengths):
+    def forward(self, features, caps, lengths, pretrain=False):
         """Decode image feature vectors and generates captions."""
         embeddings = self.embed(caps)
         embeddings = torch.cat((features.unsqueeze(1), embeddings), 1)  #First timestep input to lstm is features from image. Appending to captions
@@ -44,24 +44,41 @@ class Decoder(nn.Module):
         packed_output, hidden = self.lstm(packed)
         output, input_sizes = pad_packed_sequence(packed_output, batch_first=True) #Unpack sequence
 
-        gumbel_t = self.add_gumbel(self.linear(output))
-        pred = F.softmax(gumbel_t * self.temperature, dim=-1) 
+        if pretrain:
+            pred = self.linear(output)
+        else:
+            gumbel_t = self.add_gumbel(self.linear(output))
+            pred = F.softmax(gumbel_t * self.temperature, dim=-1) 
 
         return pred, hidden
     
-    def sample(self, features, states=None):
+    def sample(self, features, states=None, pretrain=False, max_caption_len=34):
         """Generate captions for given image features using greedy search."""
         sampled_ids = []
         inputs = features.unsqueeze(1)
-        for i in range(self.max_seg_length):
+        outputs = []
+        for i in range(max_caption_len):
             hiddens, states = self.lstm(inputs, states)          # hiddens: (batch_size, 1, hidden_size)
-            outputs = self.linear(hiddens.squeeze(1))            # outputs:  (batch_size, vocab_size)
-            _, predicted = outputs.max(1)                        # predicted: (batch_size)
-            sampled_ids.append(predicted)
-            inputs = self.embed(predicted)                       # inputs: (batch_size, embed_size)
+            
+            if pretrain:
+                pred = self.linear(hiddens.squeeze(1))
+                outputs.append(pred)
+                pred = F.softmax(pred, dim=-1)
+            else:
+                gumbel_t = self.add_gumbel(self.linear(hiddens.squeeze(1)))            # outputs:  (batch_size, vocab_size)
+                pred = F.softmax(gumbel_t * self.temperature, dim=-1)  
+                outputs.append(pred)
+            
+#             print(pred.shape)
+            _, pred_index = pred.max(1)                        # predicted: (batch_size)
+            sampled_ids.append(pred_index)
+            inputs = self.embed(pred_index.detach())                       # inputs: (batch_size, embed_size)
             inputs = inputs.unsqueeze(1)                         # inputs: (batch_size, 1, embed_size)
         sampled_ids = torch.stack(sampled_ids, 1)                # sampled_ids: (batch_size, max_seq_length)
-        return sampled_ids
+#         print(len(outputs),outputs[0].shape)
+        outputs = torch.stack(outputs, 1)
+#         print(outputs.shape)
+        return outputs, sampled_ids
     
     #@staticmethod
     def add_gumbel(self, o_t, eps=1e-10, gpu=0):
@@ -87,10 +104,10 @@ class Generator(nn.Module):
         self.args = args
         self.init_params()
         
-    def forward(self, images, caps, lengths):
+    def forward(self, images, caps, lengths, pretrain=False):
         """Extract feature vectors from input images."""
         features = self.encoder(images)
-        pred, hidden = self.decoder(features, caps, lengths)
+        pred, hidden = self.decoder(features, caps, lengths, pretrain)
         return pred, hidden
 
     def init_params(self):
