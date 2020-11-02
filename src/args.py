@@ -21,7 +21,7 @@ def add_model_args(parser):
 
     parser.add_argument('--gen-num-layers',
                             type=int,
-                            default=2,
+                            default=1,
                             help='number of layers in generator')
 
     parser.add_argument('--gen-init',
