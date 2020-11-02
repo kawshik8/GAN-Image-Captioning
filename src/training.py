@@ -41,37 +41,7 @@ class GANInstructor():
 
         self.args = args
         self.cgan = (self.args.conditional_gan==1)
-
-    # def __del__(self):
-    #     self.writer.close()
-
-    def _run(self):
-
-        ## === PRETRAINING GENERATOR === ##
-        self.pretrain_generator(self.args.pretrain_epochs)
-
-        # # ===ADVERSARIAL TRAINING===
-        self.log.info('Starting Adversarial Training...')
-#         progress = tqdm(range(self.args.adv_epochs))
-
-        for adv_epoch in range(self.args.adv_epochs):
-            self.disc.train()
-            self.gen.train()
-            train_g_loss, train_d_loss = self.adv_loop('train')  # Discriminator
-            
-            self.disc.eval()
-            self.gen.eval()
-            val_g_loss, val_d_loss = self.adv_loop('val')
-
-            self.update_temperature(adv_epoch, self.args.adv_epochs)  # update temperature
-    
-            # TEST
-            if adv_epoch % self.args.adv_log_step == 0 or adv_epoch == self.args.adv_epochs - 1:
-                self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f' % (
-                    adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss))
-
-                # if cfg.if_save and not cfg.if_test:
-                #     self._save('ADV', adv_epoch)
+        self.adv_epoch = -1
 
     def genpretrain_loop(self, what):
 
@@ -148,11 +118,13 @@ class GANInstructor():
         total_gen_loss = 0
         total_disc_loss = 0
         
+        float_epoch = 0.0
         with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total=(len(self.train_dataset) if what == 'train' else len(self.dev_dataset))) as progress:
             gen_loss = []
             disc_loss = []
             for batch_idx, (images, captions, lengths, max_caption_len) in enumerate((self.adv_train_loader if what=='train' else self.adv_eval_loader)):
-        
+                
+                float_epoch += 1
                 images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)
                 real_samples = captions #train_data -> (images,lengths,captions)
           
@@ -194,6 +166,8 @@ class GANInstructor():
                 progress.update(len(images))
                 progress.set_postfix(disc_loss=d_loss.item(), gen_loss=g_loss.item())
 
+                self.update_temperature(self.adv_epoch + (float_epoch/(len((self.adv_train_loader if what=='train' else self.adv_eval_loader)))), self.args.adv_epochs)  # update temperature
+
         total_gen_loss = np.mean(gen_loss)
         total_disc_loss = np.mean(disc_loss)
 
@@ -209,3 +183,32 @@ class GANInstructor():
         if model is not None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.clip_norm)
         opt.step()
+
+    def _run(self):
+    
+        ## === PRETRAINING GENERATOR === ##
+        self.pretrain_generator(self.args.pretrain_epochs)
+
+        # # ===ADVERSARIAL TRAINING===
+        self.log.info('Starting Adversarial Training...')
+#         progress = tqdm(range(self.args.adv_epochs))
+
+        for adv_epoch in range(self.args.adv_epochs):
+
+            self.adv_epoch = adv_epoch
+            
+            self.disc.train()
+            self.gen.train()
+            train_g_loss, train_d_loss = self.adv_loop('train')  # Discriminator
+            
+            self.disc.eval()
+            self.gen.eval()
+            val_g_loss, val_d_loss = self.adv_loop('val')
+    
+            # TEST
+            if adv_epoch % self.args.adv_log_step == 0 or adv_epoch == self.args.adv_epochs - 1:
+                self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f' % (
+                    adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss))
+
+                # if cfg.if_save and not cfg.if_test:
+                #     self._save('ADV', adv_epoch)
