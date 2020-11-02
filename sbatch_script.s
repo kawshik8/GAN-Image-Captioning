@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --cpus-per-task=4
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:k80:1
+#SBATCH --gres=gpu:p40:1
 #SBATCH --time=6:00:00
 #SBATCH --mem=50000
 #SBATCH --job-name=kk4161
@@ -13,4 +13,4 @@ module load python3/intel/3.5.3
 source ../../env/bin/activate
 #pip3 install tensorboardX
 
-python3 src/main.py --data-dir ../coco_data --save-dir save --pre-log-step 1 --adv-log-step 1 --device cuda --dataset_percent 0.1
+python3 src/main.py --data-dir ../coco_data --save-dir save --dataset_percent 0.1 --expt-name adv_debug --captions-per-image 5

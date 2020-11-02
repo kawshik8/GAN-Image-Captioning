@@ -16,7 +16,7 @@ def add_model_args(parser):
 
     parser.add_argument('--gen-embed-dim',
                             type=int,
-                            default=512,
+                            default=32,
                             help='embedding dimension of generator')
 
     parser.add_argument('--gen-num-layers',
@@ -33,7 +33,7 @@ def add_model_args(parser):
 
     parser.add_argument('--disc-embed-dim',
                             type=int,
-                            default=512,
+                            default=64,
                             help='embeddings dimension to use in discriminator')
 
     parser.add_argument('--disc-num-rep',
@@ -43,12 +43,12 @@ def add_model_args(parser):
 
     parser.add_argument('--disc-filter-sizes',
                             type=list,
-                            default=[2, 3, 4, 5],
+                            default=[3, 4, 5],
                             help='Layer wise filter sizes to use in discriminator')
 
     parser.add_argument('--disc-num-filters',
                             type=list,
-                            default=[300, 300, 300, 300],
+                            default=[300, 300, 300],
                             help='number of filters to use in discriminator per layer')
 
     parser.add_argument('--disc-init',
@@ -122,29 +122,29 @@ def add_training_args(parser):
 
     parser.add_argument('--pretrain-lr',
                             type=float,
-                            default=1e-3,
+                            default=1e-2,
                             help='learning rate for pretraining generator')
 
     parser.add_argument('--pretrain-epochs',
                             type=int,
-                            default=30,
+                            default=0,
                             help='number of epochs for pretraining generator')
 
     parser.add_argument('--pre-train-batch-size',
                             type=int,
-                            default=16,
+                            default=64,
                             help='number of batches to train at each step of pretrain training')
 
     parser.add_argument('--pre-eval-batch-size',
                             type=int,
-                            default=16,
+                            default=64,
                             help='number of batches to train at each step of pretrain evaluation')
 
     #################### Adversarial Training ###################
 
     parser.add_argument('--gen-lr',
                             type=float,
-                            default=1e-3,
+                            default=1e-4,
                             help='learning rate for adversarial training of generator')
 
     parser.add_argument('--disc-lr',
@@ -164,12 +164,12 @@ def add_training_args(parser):
 
     parser.add_argument('--adv-train-batch-size',
                             type=int,
-                            default=16,
+                            default=64,
                             help='number of batches to train at each step of adversarial training')
 
     parser.add_argument('--adv-eval-batch-size',
                             type=int,
-                            default=16,
+                            default=64,
                             help='number of batches to train at each step of adversarial evaluation')
 
     parser.add_argument('--adv-loss-type',
@@ -207,7 +207,7 @@ def get_args():
         
     parser.add_argument('--device',
                             type=str,
-                            default='cpu',
+                            default='cuda',
                             help='device to use for training (cpu|cuda)')
 
     parser.add_argument('--device-ids',
@@ -237,12 +237,12 @@ def get_args():
 
     parser.add_argument('--adv-log-step',
                             type=int,
-                            default=20,
+                            default=1,
                             help='Log step frequency for adversarial training')
 
     parser.add_argument('--pre-log-step',
                             type=int,
-                            default=20,
+                            default=1,
                             help='Log step frequency for pretraining')
 
     parser.add_argument('--test-log-step',
