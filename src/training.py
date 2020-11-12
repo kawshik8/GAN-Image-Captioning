@@ -105,6 +105,7 @@ class GANInstructor():
         total_loss = 0
 
         best_loss = None
+        patience = 0
         for epoch in range(self.args.pretrain_epochs):
 
             self.gen.train()
@@ -117,12 +118,19 @@ class GANInstructor():
             gen_loss = self.genpretrain_loop('val')
             val_epoch_loss = np.mean(gen_loss)
 
+            if epoch%self.args.pre_log_step == 0:
+                self.log.info("Epoch {}: \n \t Train: {} \n\t Val: {} ".format(epoch,train_epoch_loss,val_epoch_loss))
+
             if best_loss is None or val_epoch_loss < best_loss :
                 best_loss = val_epoch_loss
                 torch.save(self.gen.state_dict(), args.model_dir + "/pretrained_model.ckpt")
-            
-            if epoch%self.args.pre_log_step == 0:
-                self.log.info("Epoch {}: \n \t Train: {} \n\t Val: {} ".format(epoch,train_epoch_loss,val_epoch_loss))
+                patience = 0
+            elif patience >= self.pretrain_patience:
+                self.log.info("Early Stopping at Epoch {}".format(epoch))
+                break
+            else:
+                patience += 1
+
 
             self.pretrain_steps+=1
 
@@ -210,6 +218,7 @@ class GANInstructor():
         self.log.info('Starting Adversarial Training...')
 #         progress = tqdm(range(self.args.adv_epochs))
         
+        patience = 0
         best_loss = None
         for adv_epoch in range(self.args.adv_epochs):
 
@@ -223,15 +232,23 @@ class GANInstructor():
             self.gen.eval()
             val_g_loss, val_d_loss = self.adv_loop('val')
 
-            if best_loss is None or val_g_loss < best_loss :
-                best_loss = val_g_loss 
-                torch.save({"generator":self.gen.state_dict(),
-                            "discriminator":self.disc.state_dict()}, self.model_dir + "/adv_model.ckpt")
-    
             # TEST
             if adv_epoch % self.args.adv_log_step == 0 or adv_epoch == self.args.adv_epochs - 1:
                 self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f' % (
                     adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss))
+
+            if best_loss is None or val_g_loss < best_loss :
+                best_loss = val_g_loss 
+                torch.save({"generator":self.gen.state_dict(),
+                            "discriminator":self.disc.state_dict()}, self.model_dir + "/adv_model.ckpt")
+                patience = 0
+            elif patience >= self.advtrain_patience:
+                self.log.info("Early Stopping at Epoch {}".format(epoch))
+                break
+            else:
+                patience += 1
+    
+            
 
                 # if cfg.if_save and not cfg.if_test:
                 #     self._save('ADV', adv_epoch)

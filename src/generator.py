@@ -61,11 +61,11 @@ class Decoder(nn.Module):
         if args.gen_model_type == 'lstm':
             self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True)
         elif args.gen_model_type == 'transformer' and args.conditional_gan:
-            decoder_layer = TransformerDecoderLayer(args.gen_hidden_dim)
-            self.transformer = TransformerDecoder(decoder_layer, 6)
+            decoder_layer = TransformerDecoderLayer(args.gen_hidden_dim, args.gen_nheads, args.gen_hidden_dim)
+            self.transformer = TransformerDecoder(decoder_layer, args.gen_num_layers)
         elif args.gen_model_type == 'transformer' and not args.conditional_gan:
-            encoder_layer = TransformerEncoderLayer(args.gen_hidden_dim)
-            self.transformer = TransformerEncoder(encoder_layer, 6)
+            encoder_layer = TransformerEncoderLayer(args.gen_hidden_dim, args.gen_nheads, args.gen_hidden_dim)
+            self.transformer = TransformerEncoder(encoder_layer, args.gen_num_layers)
         self.linear = nn.Linear(args.gen_hidden_dim, args.vocab_size)
         self.max_seq_length = args.max_seq_len
         self.temperature = args.temperature

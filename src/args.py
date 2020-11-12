@@ -30,6 +30,11 @@ def add_model_args(parser):
                             default=1,
                             help='number of layers in generator')
 
+    parser.add_argument('--gen-nheads',
+                            type=int,
+                            default=8,
+                            help='number of heads for multi headed attention in generators')
+
     parser.add_argument('--gen-init',
                             type=str,
                             default='uniform',
@@ -101,7 +106,7 @@ def add_data_args(parser):
 
     parser.add_argument('--vocab-size',
                             type=int,
-                            default=-1,
+                            default=100,
                             help='vocab size for training')
 
     parser.add_argument('--max-seq-len',
@@ -124,7 +129,7 @@ def add_data_args(parser):
 
     parser.add_argument('--captions-per-image',
                             type=int,
-                            default=1,
+                            default=5,
                             help='no of captions to use per image')
     
     ################### Common Part ###################
