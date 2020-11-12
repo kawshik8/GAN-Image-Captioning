@@ -9,6 +9,12 @@ def add_model_args(parser):
 
     ################### Generator ###################
 
+    parser.add_argument('--resnet-type',
+                            type=str,
+                            default="resnet18",
+                            choices=["resnet18","resnet34","resnet50","resnet101","resnet152"],
+                            help='resnet model to use')
+
     parser.add_argument('--gen-hidden-dim',
                             type=int,
                             default=512,
@@ -34,6 +40,18 @@ def add_model_args(parser):
                             default='transformer',
                             choices=["transformer","lstm"],
                             help='type of generator to use')
+
+    parser.add_argument('--gen-model-output',
+                            type=str,
+                            default='grid',
+                            choices=["grid","pool"],
+                            help='type of cnn output to use')
+
+    parser.add_argument('--freeze-cnn',
+                            type=int,
+                            default=1,
+                            choices=[0,1],
+                            help='use cnn as feature extractor? or backpropogate gradients?')
 
     ################### Discriminator ###################
 
@@ -146,6 +164,11 @@ def add_training_args(parser):
                             default=64,
                             help='number of batches to train at each step of pretrain evaluation')
 
+    parser.add_argument('--pretrain-patience',
+                            type=int,
+                            default=10,
+                            help='number of epochs to wait before early stopping')
+
     #################### Adversarial Training ###################
 
     parser.add_argument('--gen-lr',
@@ -182,6 +205,11 @@ def add_training_args(parser):
                             type=str,
                             default='standard',
                             help='Loss function to use for adversarial training')
+
+    parser.add_argument('--advtrain-patience',
+                            type=int,
+                            default=10,
+                            help='number of epochs to wait before early stopping')
 
     parser.add_argument('--temperature',
                             type=int,

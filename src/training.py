@@ -44,6 +44,8 @@ class GANInstructor():
         self.args = args
         self.cgan = (self.args.conditional_gan==1)
         self.adv_epoch = -1
+        self.pretrain_patience = self.args.pretrain_patience
+        self.advtrain_patience = self.args.advtrain_patience
 
     def genpretrain_loop(self, what):
 
@@ -63,17 +65,19 @@ class GANInstructor():
                 #images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)              
                 
                 if self.cgan:
-                    features = self.gen.encoder(images)
+                    features = [self.gen.encoder(images),self.gen.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))]
                 else:
                     features = self.gen.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
 #                 fake_captions = self.gen.decoder.sample(features)
+
+                # print(features.shape)
          
                 gen_captions, gen_caption_ids = self.gen.decoder.sample(features, pretrain=True, max_caption_len=max_caption_len)
 
                 real_captions, gen_captions = real_captions.to(self.args.device), gen_captions.to(self.args.device)
 
-                bleu = bleu_score(gen_caption_ids, real_captions.unsqueeze(0))
-                print(bleu)
+                # bleu = bleu_score(gen_caption_ids, real_captions.unsqueeze(0))
+                # print(bleu)
 #                 print(gen_captions.shape, real_captions.shape)
 #                 targets = pack_padded_sequence(real_captions, lengths, batch_first=True, enforce_sorted=False)[0]
 #                 outputs = pack_padded_sequence(gen_captions, lengths, batch_first=True, enforce_sorted=False)[0]      
@@ -141,7 +145,7 @@ class GANInstructor():
                 # self.disc_opt.zero_grad()
                 # self.gen_opt.zero_grad()
                 if self.cgan:
-                    features = self.gen.encoder(images)
+                    features = self.gen.encoder(images)                        
                 else:
                     features = self.gen.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
 #                 fake_captions = self.gen.decoder.sample(features)
@@ -151,8 +155,8 @@ class GANInstructor():
 
                 fake_captions = fake_captions.to(self.args.device)
 
-                bleu = bleu_score(gen_caption_ids, real_captions.unsqueeze(0))
-                print(bleu)
+                # bleu = bleu_score(gen_caption_ids, real_captions.unsqueeze(0))
+                # print(bleu)
 
                 real_captions = F.one_hot(real_captions, self.args.vocab_size).float()
 #                 fake_captions = F.one_hot(fake_captions, self.args.vocab_size).float()
