@@ -55,7 +55,7 @@ def get_losses(d_out_real, d_out_fake, g_out, loss_type='JS'):
 def get_fixed_temperature(temper, i, N, adapt):
     """A function to set up different temperature control policies"""
     # N = 5000
-    assert(num_epochs <N)
+    # assert(num_epochs <N)
     if adapt == 'no':
         temper_var_np = 1.0  # no increase, origin: temper
     elif adapt == 'lin':

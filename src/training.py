@@ -92,7 +92,7 @@ class GANInstructor():
         return gen_loss
 
     def pretrain_generator(self, epochs):
-        print("Pretraining Generator")
+        self.log.info("Pretraining Generator")
         total_loss = 0
 
         for epoch in range(self.args.pretrain_epochs):
@@ -108,7 +108,7 @@ class GANInstructor():
             val_epoch_loss = np.mean(gen_loss)
             
             if epoch%self.args.pre_log_step == 0:
-                print("Epoch {}: \n \t Train: {} \n\t Val: {} ".format(epoch,train_epoch_loss,val_epoch_loss))
+                self.log.info("Epoch {}: \n \t Train: {} \n\t Val: {} ".format(epoch,train_epoch_loss,val_epoch_loss))
 
             self.pretrain_steps+=1
 
