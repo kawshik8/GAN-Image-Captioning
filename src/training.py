@@ -10,6 +10,7 @@ from discriminator import *
 import numpy as np
 from torch.utils.data import DataLoader
 from tasks import collate_fn
+from torchtext.data.metrics import bleu_score
 
 class GANInstructor():
     def __init__(self, args, train_dataset, dev_dataset):
@@ -33,7 +34,8 @@ class GANInstructor():
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
  
-        self.writer = SummaryWriter()
+        self.model_dir = args.model_dir
+        self.writer = SummaryWriter(args.save_dir)
         
         self.pretrain_steps = 0
         self.gen_steps = 0
@@ -55,7 +57,7 @@ class GANInstructor():
 #                 print(lengths, flush=True)
                 
                 images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)
-                real_samples = captions 
+                real_captions = captions 
                 # self.pretrain_opt.zero_grad()
 
                 #images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)              
@@ -64,18 +66,21 @@ class GANInstructor():
                     features = self.gen.encoder(images)
                 else:
                     features = self.gen.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
-#                 fake_samples = self.gen.decoder.sample(features)
+#                 fake_captions = self.gen.decoder.sample(features)
          
-                gen_samples, _ = self.gen.decoder.sample(features, pretrain=True, max_caption_len=max_caption_len)
+                gen_captions, gen_caption_ids = self.gen.decoder.sample(features, pretrain=True, max_caption_len=max_caption_len)
 
-                real_samples, gen_samples = real_samples.to(self.args.device), gen_samples.to(self.args.device)
-#                 print(gen_samples.shape, real_samples.shape)
-#                 targets = pack_padded_sequence(real_samples, lengths, batch_first=True, enforce_sorted=False)[0]
-#                 outputs = pack_padded_sequence(gen_samples, lengths, batch_first=True, enforce_sorted=False)[0]      
+                real_captions, gen_captions = real_captions.to(self.args.device), gen_captions.to(self.args.device)
+
+                bleu = bleu_score(gen_caption_ids, real_captions.unsqueeze(0))
+                print(bleu)
+#                 print(gen_captions.shape, real_captions.shape)
+#                 targets = pack_padded_sequence(real_captions, lengths, batch_first=True, enforce_sorted=False)[0]
+#                 outputs = pack_padded_sequence(gen_captions, lengths, batch_first=True, enforce_sorted=False)[0]      
 
                 criterion = nn.CrossEntropyLoss()
     
-                loss = criterion(gen_samples.view(-1,gen_samples.size(-1)), real_samples.view(-1))
+                loss = criterion(gen_captions.view(-1,gen_captions.size(-1)), real_captions.view(-1))
 
                 #print(loss)
 
@@ -95,6 +100,7 @@ class GANInstructor():
         self.log.info("Pretraining Generator")
         total_loss = 0
 
+        best_loss = None
         for epoch in range(self.args.pretrain_epochs):
 
             self.gen.train()
@@ -106,6 +112,10 @@ class GANInstructor():
             self.gen.eval()
             gen_loss = self.genpretrain_loop('val')
             val_epoch_loss = np.mean(gen_loss)
+
+            if best_loss is None or val_epoch_loss < best_loss :
+                best_loss = val_epoch_loss
+                torch.save(self.gen.state_dict(), args.model_dir + "/pretrained_model.ckpt")
             
             if epoch%self.args.pre_log_step == 0:
                 self.log.info("Epoch {}: \n \t Train: {} \n\t Val: {} ".format(epoch,train_epoch_loss,val_epoch_loss))
@@ -126,7 +136,7 @@ class GANInstructor():
                 
                 float_epoch += 1
                 images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)
-                real_samples = captions #train_data -> (images,lengths,captions)
+                real_captions = captions #train_data -> (images,lengths,captions)
           
                 # self.disc_opt.zero_grad()
                 # self.gen_opt.zero_grad()
@@ -134,20 +144,23 @@ class GANInstructor():
                     features = self.gen.encoder(images)
                 else:
                     features = self.gen.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
-#                 fake_samples = self.gen.decoder.sample(features)
+#                 fake_captions = self.gen.decoder.sample(features)
          
-                gen_samples, _ = self.gen.decoder.sample(features, max_caption_len=max_caption_len)
-                fake_samples = gen_samples.detach()
+                gen_captions, gen_caption_ids = self.gen.decoder.sample(features, max_caption_len=max_caption_len)
+                fake_captions = gen_captions.detach()
 
-                fake_samples = fake_samples.to(self.args.device)
+                fake_captions = fake_captions.to(self.args.device)
 
-                real_samples = F.one_hot(real_samples, self.args.vocab_size).float()
-#                 fake_samples = F.one_hot(fake_samples, self.args.vocab_size).float()
+                bleu = bleu_score(gen_caption_ids, real_captions.unsqueeze(0))
+                print(bleu)
+
+                real_captions = F.one_hot(real_captions, self.args.vocab_size).float()
+#                 fake_captions = F.one_hot(fake_captions, self.args.vocab_size).float()
 
                 # ===Train===
-                d_out_real = self.disc(real_samples)
-                d_out_fake = self.disc(fake_samples)
-                g_out = self.disc(gen_samples)
+                d_out_real = self.disc(real_captions)
+                d_out_fake = self.disc(fake_captions)
+                g_out = self.disc(gen_captions)
                 g_loss, d_loss = get_losses(d_out_real, d_out_fake, g_out, self.args.adv_loss_type)
 
                 if what == 'train':
@@ -192,7 +205,8 @@ class GANInstructor():
         # # ===ADVERSARIAL TRAINING===
         self.log.info('Starting Adversarial Training...')
 #         progress = tqdm(range(self.args.adv_epochs))
-
+        
+        best_loss = None
         for adv_epoch in range(self.args.adv_epochs):
 
             self.adv_epoch = adv_epoch
@@ -204,6 +218,11 @@ class GANInstructor():
             self.disc.eval()
             self.gen.eval()
             val_g_loss, val_d_loss = self.adv_loop('val')
+
+            if best_loss is None or val_g_loss < best_loss :
+                best_loss = val_g_loss 
+                torch.save({"generator":self.gen.state_dict(),
+                            "discriminator":self.disc.state_dict()}, self.model_dir + "/adv_model.ckpt")
     
             # TEST
             if adv_epoch % self.args.adv_log_step == 0 or adv_epoch == self.args.adv_epochs - 1:
