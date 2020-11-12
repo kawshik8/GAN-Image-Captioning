@@ -29,6 +29,12 @@ def add_model_args(parser):
                             default='uniform',
                             help='Initialization strategy for generator weights')
 
+    parser.add_argument('--gen-model-type',
+                            type=str,
+                            default='transformer',
+                            choices=["transformer","lstm"],
+                            help='type of generator to use')
+
     ################### Discriminator ###################
 
     parser.add_argument('--disc-embed-dim',

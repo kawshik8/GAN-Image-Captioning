@@ -4,6 +4,7 @@ import torch.nn as nn
 import torchvision.models as models
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from transformer import *
 
 class Encoder(nn.Module):
     def __init__(self, args):
@@ -29,7 +30,11 @@ class Decoder(nn.Module):
         """Set the hyper-parameters and build the layers."""
         super(Decoder, self).__init__()
         self.embed = nn.Embedding(args.vocab_size, args.gen_embed_dim)
-        self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True)
+        if args.gen_model_type == 'lstm':
+            self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True)
+        elif args.gen_model_type == 'transformer':
+            decoder_layer = TransformerDecoderLayer(args.gen_hidden_dim)
+            self.transformer = TransformerDecoder()
         self.linear = nn.Linear(args.gen_hidden_dim, args.vocab_size)
         self.max_seq_length = args.max_seq_len
         self.temperature = args.temperature
