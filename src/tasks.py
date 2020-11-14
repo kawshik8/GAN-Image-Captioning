@@ -132,42 +132,43 @@ class COCO_data(Dataset):
         #print(index)
 #         print(index,image_path,caption)
 
-        caption = self.tokenizer.encode_plus(
-            caption,
-            max_length=self.max_seq_len,
-            add_special_tokens=True,
-            pad_to_max_length=True,
-            return_attention_mask=True,
-            return_token_type_ids=False,
-            return_tensors='pt'
-        )
-
-        caption['input_ids'] = caption['input_ids'].squeeze().type(torch.LongTensor)
-        caption['attention_mask'] = caption['attention_mask'].squeeze().type(torch.LongTensor)
-
         return image, caption, torch.ones(1)*34        
            
-# def collate_fn(batch):
+    def collate_fn(self, batch):
         
-#     image_size = batch[0][0].shape[-1]
-#     images = torch.zeros(len(batch), 3, image_size, image_size)
-    
-#     max_caption_len = 0
-#     for i in range(len(batch)):
-#         images[i] = batch[i][0]
-#         max_caption_len = max(max_caption_len, len(batch[i][1]))
-#     max_caption_len += 2
-# #     print("max caption len:",max_caption_len)
-                
-#     captions = torch.zeros(len(batch), max_caption_len).type(torch.long)
-#     lengths = torch.zeros(len(batch)).type(torch.int)
-    
-#     for i in range(len(batch)):
-#         curr_len = len(batch[i][1])
-#         captions[i] = torch.LongTensor([1] + batch[i][1] + [2] + [0]*(max_caption_len - curr_len - 2))
-#         lengths[i] = curr_len + 2        
+        image_size = batch[0][0].shape[-1]
+        images = torch.stack(batch[i][0])
+        
+        max_caption_len = 0
 
-#     return images, captions, lengths, max_caption_len
+        captions = []
+        for i in range(len(batch)):
+            captions.append(batch[i][1])
+            max_caption_len = max(max_caption_len, len(batch[i][1]))
+        max_caption_len += 2
+    #     print("max caption len:",max_caption_len)
+        print(captions)
+        captions = self.tokenizer.batch_encode_plus(
+                captions,
+                add_special_tokens=True,
+                padding='longest',
+                return_attention_mask=True,
+                return_token_type_ids=False,
+                return_tensors='pt'
+            )
+
+        captions['input_ids'] = captions['input_ids'].squeeze().type(torch.LongTensor)
+        captions['attention_mask'] = captions['attention_mask'].squeeze().type(torch.LongTensor)
+                    
+        # captions = torch.zeros(len(batch), max_caption_len).type(torch.long)
+        lengths = torch.zeros(len(batch)).type(torch.int) + max_caption_len
+        
+        for i in range(len(batch)):
+            curr_len = len(batch[i][1])
+            # captions[i] = torch.LongTensor([1] + batch[i][1] + [2] + [0]*(max_caption_len - curr_len - 2))
+                    
+
+        return images, captions, lengths, max_caption_len
 
 if __name__ == '__main__':
      
