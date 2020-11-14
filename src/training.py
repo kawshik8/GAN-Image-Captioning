@@ -10,7 +10,6 @@ from discriminator import *
 import numpy as np
 from torch.utils.data import DataLoader
 from tasks import collate_fn
-from torchtext.data.metrics import bleu_score
 
 class GANInstructor():
     def __init__(self, args, train_dataset, dev_dataset):
@@ -25,11 +24,11 @@ class GANInstructor():
         self.gen_opt = optim.Adam(self.gen.parameters(), lr=args.gen_lr)
         self.disc_opt = optim.Adam(self.disc.parameters(), lr=args.disc_lr)
 
-        self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, collate_fn=collate_fn, num_workers=4)
-        self.pre_eval_loader = DataLoader(dev_dataset, batch_size=args.pre_eval_batch_size, collate_fn=collate_fn, num_workers=4)
+        self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, num_workers=4)
+        self.pre_eval_loader = DataLoader(dev_dataset, shuffle=False, batch_size=args.pre_eval_batch_size, num_workers=4)
 
-        self.adv_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.adv_train_batch_size, collate_fn=collate_fn, num_workers=4)
-        self.adv_eval_loader = DataLoader(dev_dataset, batch_size=args.adv_eval_batch_size, collate_fn=collate_fn, num_workers=4)
+        self.adv_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.adv_train_batch_size, num_workers=4)
+        self.adv_eval_loader = DataLoader(dev_dataset, shuffle=False, batch_size=args.adv_eval_batch_size, num_workers=4)
        
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
@@ -65,9 +64,9 @@ class GANInstructor():
                 #images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)              
                 
                 if self.cgan:
-                    features = [self.gen.encoder(images),self.gen.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))]
+                    features = [self.gen.encoder(images),self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))]
                 else:
-                    features = self.gen.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
+                    features = self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
 #                 fake_captions = self.gen.decoder.sample(features)
 
                 # print(features.shape)
@@ -153,9 +152,9 @@ class GANInstructor():
                 # self.disc_opt.zero_grad()
                 # self.gen_opt.zero_grad()
                 if self.cgan:
-                    features = self.gen.encoder(images)                        
+                    features = [self.gen.encoder(images),self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))]
                 else:
-                    features = self.gen.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
+                    features = self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
 #                 fake_captions = self.gen.decoder.sample(features)
          
                 gen_captions, gen_caption_ids = self.gen.decoder.sample(features, max_caption_len=max_caption_len)
