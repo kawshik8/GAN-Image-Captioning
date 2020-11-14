@@ -72,8 +72,8 @@ class GANInstructor():
 
                 real_captions, gen_captions = real_captions.to(self.args.device), gen_captions.to(self.args.device)
 
-                bleu = bleu_score(gen_caption_ids, real_captions.unsqueeze(0))
-                print(bleu)
+                #bleu = bleu_score(gen_caption_ids, real_captions.unsqueeze(1))
+                #print(bleu)
 #                 print(gen_captions.shape, real_captions.shape)
 #                 targets = pack_padded_sequence(real_captions, lengths, batch_first=True, enforce_sorted=False)[0]
 #                 outputs = pack_padded_sequence(gen_captions, lengths, batch_first=True, enforce_sorted=False)[0]      
@@ -115,7 +115,8 @@ class GANInstructor():
 
             if best_loss is None or val_epoch_loss < best_loss :
                 best_loss = val_epoch_loss
-                torch.save(self.gen.state_dict(), args.model_dir + "/pretrained_model.ckpt")
+                torch.save(self.gen.state_dict(), self.model_dir + "/pretrained_model.ckpt")
+                self.log.info("Saving Best model [Gen Loss = {}] at Epoch {}".format(best_loss, epoch))
             
             if epoch%self.args.pre_log_step == 0:
                 self.log.info("Epoch {}: \n \t Train: {} \n\t Val: {} ".format(epoch,train_epoch_loss,val_epoch_loss))
@@ -151,8 +152,8 @@ class GANInstructor():
 
                 fake_captions = fake_captions.to(self.args.device)
 
-                bleu = bleu_score(gen_caption_ids, real_captions.unsqueeze(0))
-                print(bleu)
+                #bleu = bleu_score(gen_caption_ids, real_captions.unsqueeze(1))
+                #print(bleu)
 
                 real_captions = F.one_hot(real_captions, self.args.vocab_size).float()
 #                 fake_captions = F.one_hot(fake_captions, self.args.vocab_size).float()
@@ -223,7 +224,8 @@ class GANInstructor():
                 best_loss = val_g_loss 
                 torch.save({"generator":self.gen.state_dict(),
                             "discriminator":self.disc.state_dict()}, self.model_dir + "/adv_model.ckpt")
-    
+                self.log.info("Saving Best model [Gen Loss = {}] at Epoch {}".format(best_loss, epoch))    
+
             # TEST
             if adv_epoch % self.args.adv_log_step == 0 or adv_epoch == self.args.adv_epochs - 1:
                 self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f' % (
