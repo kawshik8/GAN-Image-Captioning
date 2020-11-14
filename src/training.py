@@ -9,7 +9,7 @@ from generator import *
 from discriminator import *
 import numpy as np
 from torch.utils.data import DataLoader
-#from tasks import collate_fn
+from tasks import *#collate_fn
 
 class GANInstructor():
     def __init__(self, args, train_dataset, dev_dataset):
@@ -24,11 +24,11 @@ class GANInstructor():
         self.gen_opt = optim.Adam(self.gen.parameters(), lr=args.gen_lr)
         self.disc_opt = optim.Adam(self.disc.parameters(), lr=args.disc_lr)
 
-        self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, num_workers=4)
-        self.pre_eval_loader = DataLoader(dev_dataset, shuffle=False, batch_size=args.pre_eval_batch_size, num_workers=4)
+        self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, num_workers=args.num_workers, collate_fn=train_dataset.collate_fn)
+        self.pre_eval_loader = DataLoader(dev_dataset, shuffle=False, batch_size=args.pre_eval_batch_size, num_workers=args.num_workers, collate_fn=dev_dataset.collate_fn)
 
-        self.adv_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.adv_train_batch_size, num_workers=4)
-        self.adv_eval_loader = DataLoader(dev_dataset, shuffle=False, batch_size=args.adv_eval_batch_size, num_workers=4)
+        self.adv_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.adv_train_batch_size, num_workers=args.num_workers, collate_fn=train_dataset.collate_fn)
+        self.adv_eval_loader = DataLoader(dev_dataset, shuffle=False, batch_size=args.adv_eval_batch_size, num_workers=args.num_workers, collate_fn=dev_dataset.collate_fn)
        
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
@@ -56,12 +56,13 @@ class GANInstructor():
 #                 print((self.pre_train_loader if what=='train' else self.pre_eval_loader).dataset.vocab_size, flush=True)
 #                 print(captions, flush=True)
 #                 print(lengths, flush=True)
-                
-                images = images.to(self.args.device), 
+                #print(images.shape)
+                images = images.to(self.args.device) 
                 lengths = lengths.to(self.args.device)
                 attn_mask = captions["attention_mask"].to(self.args.device)
                 captions = captions["input_ids"].to(self.args.device)
                 #attn_mask = captions["attention_mask"].to(self.args.device)
+                #print(images[0].shape)
 
                 real_captions = captions 
                 # self.pretrain_opt.zero_grad()
@@ -73,8 +74,13 @@ class GANInstructor():
                 else:
                     features = self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
 #                 fake_captions = self.gen.decoder.sample(features)
-
-                # print(features.shape)
+                #print(images)
+                #print(images.shape, lengths.shape, max_caption_len)
+                #print(ca
+                #print(type(captions),len(captions))
+                #print(captions.shape, attn_mask.shape)
+                #print("zeros: ", torch.zeros(len(images),1, dtype=torch.long).squeeze(1).shape)
+                #print("features ",features.shape)
          
                 gen_captions, gen_caption_ids = self.gen.decoder.sample(features, pretrain=True, max_caption_len=max_caption_len)
 
@@ -85,7 +91,7 @@ class GANInstructor():
 #                 print(gen_captions.shape, real_captions.shape)
 #                 targets = pack_padded_sequence(real_captions, lengths, batch_first=True, enforce_sorted=False)[0]
 #                 outputs = pack_padded_sequence(gen_captions, lengths, batch_first=True, enforce_sorted=False)[0]      
-
+        #        print("captions shape: ",real_captions.shape, gen_captions.shape)
                 criterion = nn.CrossEntropyLoss()
     
                 loss = criterion(gen_captions.view(-1,gen_captions.size(-1)), real_captions.view(-1))

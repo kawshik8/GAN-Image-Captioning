@@ -139,6 +139,10 @@ def add_data_args(parser):
                             default=1.0,
                             help='percentage of dataset to use for training')
 
+    parser.add_argument('--num-workers',
+                            type=int,
+                            default=4,
+                            help='no of workers in data loader')
     #args = parser.parse_args()
 
     #return args
@@ -161,12 +165,12 @@ def add_training_args(parser):
 
     parser.add_argument('--pre-train-batch-size',
                             type=int,
-                            default=64,
+                            default=32,
                             help='number of batches to train at each step of pretrain training')
 
     parser.add_argument('--pre-eval-batch-size',
                             type=int,
-                            default=64,
+                            default=32,
                             help='number of batches to train at each step of pretrain evaluation')
 
     parser.add_argument('--pretrain-patience',

@@ -137,21 +137,26 @@ class COCO_data(Dataset):
     def collate_fn(self, batch):
         
         image_size = batch[0][0].shape[-1]
-        images = torch.stack(batch[i][0])
-        
+
+        #print(type(batch),len(batch),type(batch[:,0]),len(batch[0,1]))
+        #images = torch.cat(batch[:][0],dim=0)
+        #print(images.shape)
         max_caption_len = 0
 
+        images = torch.zeros(len(batch),3,image_size,image_size)
         captions = []
         for i in range(len(batch)):
             captions.append(batch[i][1])
+            images[i] = batch[i][0]
             max_caption_len = max(max_caption_len, len(batch[i][1]))
         max_caption_len += 2
     #     print("max caption len:",max_caption_len)
-        print(captions)
+        #print(len(batch),len(captions))
         captions = self.tokenizer.batch_encode_plus(
                 captions,
                 add_special_tokens=True,
                 padding='longest',
+                is_split_into_words=True,
                 return_attention_mask=True,
                 return_token_type_ids=False,
                 return_tensors='pt'
@@ -163,12 +168,12 @@ class COCO_data(Dataset):
         # captions = torch.zeros(len(batch), max_caption_len).type(torch.long)
         lengths = torch.zeros(len(batch)).type(torch.int) + max_caption_len
         
-        for i in range(len(batch)):
-            curr_len = len(batch[i][1])
+        #for i in range(len(batch)):
+        #    curr_len = len(batch[i][1])
             # captions[i] = torch.LongTensor([1] + batch[i][1] + [2] + [0]*(max_caption_len - curr_len - 2))
-                    
+    #    print(captions["input_ids"].shape,images.shape)            
 
-        return images, captions, lengths, max_caption_len
+        return images, captions, lengths, captions["input_ids"].shape[1]
 
 if __name__ == '__main__':
      
