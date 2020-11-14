@@ -114,14 +114,14 @@ class Decoder(nn.Module):
         for i in range(max_caption_len):
             
             if self.args.gen_model_type == 'lstm':
-                print(inputs.shape)
+    #            print(inputs.shape)
                 hiddens, states = self.lstm(inputs, states)          # hiddens: (batch_size, 1, hidden_size)
             else:
                 if self.args.conditional_gan:
-                    print("inputs, image features: ", inputs.shape, image_features.shape)
+    #                print("inputs, image features: ", inputs.shape, image_features.shape)
                     hiddens = self.transformer(tgt=inputs.transpose(0,1),memory=image_features.transpose(0,1)).transpose(0,1)
                 else:
-                    print("inputs: ", inputs.shape)
+    #                print("inputs: ", inputs.shape)
                     hiddens = self.transformer(inputs.transpose(0,1)).transpose(0,1)
             
             # print(hiddens.shape)

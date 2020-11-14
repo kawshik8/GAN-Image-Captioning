@@ -9,7 +9,7 @@ from generator import *
 from discriminator import *
 import numpy as np
 from torch.utils.data import DataLoader
-from tasks import collate_fn
+#from tasks import collate_fn
 
 class GANInstructor():
     def __init__(self, args, train_dataset, dev_dataset):
@@ -51,13 +51,17 @@ class GANInstructor():
         gen_loss = []
 
         with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total = (len(self.train_dataset) if what=='train' else len(self.dev_dataset))) as progress:
-            for batch_idx, (images, captions, lengths, max_caption_len) in enumerate((self.pre_train_loader if what=='train' else self.pre_eval_loader)):
+            for batch_idx, (images, captions, lengths) in enumerate((self.pre_train_loader if what=='train' else self.pre_eval_loader)):
                 
 #                 print((self.pre_train_loader if what=='train' else self.pre_eval_loader).dataset.vocab_size, flush=True)
 #                 print(captions, flush=True)
 #                 print(lengths, flush=True)
                 
-                images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)
+                images,lengths = images.to(self.args.device), lengths.to(self.args.device)
+                attn_mask = captions["attention_mask"].to(self.args.device)
+                captions = captions["input_ids"].to(self.args.device)
+                #attn_mask = captions["attention_mask"].to(self.args.device)
+
                 real_captions = captions 
                 # self.pretrain_opt.zero_grad()
 
@@ -71,7 +75,7 @@ class GANInstructor():
 
                 # print(features.shape)
          
-                gen_captions, gen_caption_ids = self.gen.decoder.sample(features, pretrain=True, max_caption_len=max_caption_len)
+                gen_captions, gen_caption_ids = self.gen.decoder.sample(features, pretrain=True, max_caption_len=self.args.max_seq_len)
 
                 real_captions, gen_captions = real_captions.to(self.args.device), gen_captions.to(self.args.device)
 
@@ -143,10 +147,15 @@ class GANInstructor():
         with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total=(len(self.train_dataset) if what == 'train' else len(self.dev_dataset))) as progress:
             gen_loss = []
             disc_loss = []
-            for batch_idx, (images, captions, lengths, max_caption_len) in enumerate((self.adv_train_loader if what=='train' else self.adv_eval_loader)):
+            for batch_idx, (images, captions, lengths) in enumerate((self.adv_train_loader if what=='train' else self.adv_eval_loader)):
                 
                 float_epoch += 1
-                images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)
+                
+                images,lengths = images.to(self.args.device), lengths.to(self.args.device)
+                attn_mask = captions["attention_mask"].to(self.args.device)
+                captions = captions["input_ids"].to(self.args.device)
+                #attn_mask = captions["attention_mask"].to(self.args.device)
+                #images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)
                 real_captions = captions #train_data -> (images,lengths,captions)
           
                 # self.disc_opt.zero_grad()
@@ -157,7 +166,7 @@ class GANInstructor():
                     features = self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
 #                 fake_captions = self.gen.decoder.sample(features)
          
-                gen_captions, gen_caption_ids = self.gen.decoder.sample(features, max_caption_len=max_caption_len)
+                gen_captions, gen_caption_ids = self.gen.decoder.sample(features, max_caption_len=self.args.max_seq_len)
                 fake_captions = gen_captions.detach()
 
                 fake_captions = fake_captions.to(self.args.device)

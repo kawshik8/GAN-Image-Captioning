@@ -22,12 +22,12 @@ def add_model_args(parser):
 
     parser.add_argument('--gen-embed-dim',
                             type=int,
-                            default=32,
+                            default=512,
                             help='embedding dimension of generator')
 
     parser.add_argument('--gen-num-layers',
                             type=int,
-                            default=1,
+                            default=6,
                             help='number of layers in generator')
 
     parser.add_argument('--gen-nheads',
@@ -116,7 +116,7 @@ def add_data_args(parser):
 
     parser.add_argument('--padding-idx',
                             type=int,
-                            default=0,
+                            default=1,
                             help='index of padding token in vocab')
 
     
@@ -156,7 +156,7 @@ def add_training_args(parser):
 
     parser.add_argument('--pretrain-epochs',
                             type=int,
-                            default=0,
+                            default=50,
                             help='number of epochs for pretraining generator')
 
     parser.add_argument('--pre-train-batch-size',
@@ -193,7 +193,7 @@ def add_training_args(parser):
 
     parser.add_argument('--adv-epochs',
                             type=int,
-                            default=30,
+                            default=50,
                             help='number of epochs for adversarial training')
 
     parser.add_argument('--adv-train-batch-size',

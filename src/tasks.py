@@ -6,7 +6,7 @@ import os
 import numpy as np
 import h5py
 import torch
-from scipy.misc import imread, imresize
+#from scipy.misc import imread, imresize
 from tqdm import tqdm
 from collections import Counter
 from random import seed, choice, sample
@@ -18,7 +18,7 @@ import pickle
 from transformers import RobertaTokenizer
 
 class COCO_data(Dataset):
-    def __init__(self, captions_path, image_path, split, image_size=256, captions_per_image=5, vocab_dicts=None, dataset_percent=1.0):
+    def __init__(self, captions_path, image_path, split, image_size=256, captions_per_image=5, max_seq_len=34, dataset_percent=1.0):
         
         assert split in {'train','val','test'}
 
@@ -105,6 +105,7 @@ class COCO_data(Dataset):
     
         self.vocab_size = self.tokenizer.vocab_size
         self.dataset_percent = dataset_percent
+        self.max_seq_len = max_seq_len
             
                          
     def __len__(self):
@@ -133,7 +134,7 @@ class COCO_data(Dataset):
 
         caption = self.tokenizer.encode_plus(
             caption,
-            max_length=self.args.max_seq_len,
+            max_length=self.max_seq_len,
             add_special_tokens=True,
             pad_to_max_length=True,
             return_attention_mask=True,
@@ -144,7 +145,7 @@ class COCO_data(Dataset):
         caption['input_ids'] = caption['input_ids'].squeeze().type(torch.LongTensor)
         caption['attention_mask'] = caption['attention_mask'].squeeze().type(torch.LongTensor)
 
-        return image, caption          
+        return image, caption, torch.ones(1)*34        
            
 # def collate_fn(batch):
         

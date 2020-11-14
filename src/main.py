@@ -3,7 +3,7 @@ import torch
 import random
 import numpy as np
 from training import GANInstructor
-from tasks import COCO_data, collate_fn
+from tasks import *#COCO_data, collate_fn
 from torch.utils.data import DataLoader
 from args import *
 
@@ -33,11 +33,11 @@ if torch.cuda.is_available():
 
 # train_data = [(images,captions,lengths)]
 
-train_dataset = COCO_data(args.data_dir + "/dataset_coco.json", args.data_dir, 'train', args.image_size, args.captions_per_image, dataset_percent=args.dataset_percent)
+train_dataset = COCO_data(args.data_dir + "/dataset_coco.json", args.data_dir, 'train', args.image_size, args.captions_per_image, max_seq_len=args.max_seq_len, dataset_percent=args.dataset_percent)
 
 args.vocab_size = train_dataset.vocab_size
 
-val_dataset = COCO_data(args.data_dir + "/dataset_coco.json", args.data_dir, 'val',args.image_size, args.captions_per_image, vocab_dicts = (train_dataset.word_to_index,train_dataset.index_to_word), dataset_percent=args.dataset_percent)
+val_dataset = COCO_data(args.data_dir + "/dataset_coco.json", args.data_dir, 'val',args.image_size, args.captions_per_image, max_seq_len=args.max_seq_len, dataset_percent=args.dataset_percent)
 
 #create a validation loader 
 
