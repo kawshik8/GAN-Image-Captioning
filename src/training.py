@@ -25,6 +25,11 @@ class GANInstructor():
         self.gen_opt = optim.Adam(self.gen.parameters(), lr=args.gen_lr)
         self.disc_opt = optim.Adam(self.disc.parameters(), lr=args.disc_lr)
 
+        #Schedulers ReduceLROnPlateau
+        self.pretrain_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(pretrain_opt, patience=args.pretrain_patience, verbose=True)
+        self.gen_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(gen_opt, patience=args.gen_patience, verbose=True)
+        self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(disc_opt, patience=args.disc_patience, verbose=True)
+
         self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, collate_fn=collate_fn, num_workers=4)
         self.pre_eval_loader = DataLoader(dev_dataset, batch_size=args.pre_eval_batch_size, collate_fn=collate_fn, num_workers=4)
 
@@ -112,6 +117,8 @@ class GANInstructor():
             self.gen.eval()
             gen_loss = self.genpretrain_loop('val')
             val_epoch_loss = np.mean(gen_loss)
+
+            self.pretrain_scheduler.step(val_epoch_loss)
 
             if best_loss is None or val_epoch_loss < best_loss :
                 best_loss = val_epoch_loss
@@ -218,6 +225,9 @@ class GANInstructor():
             self.disc.eval()
             self.gen.eval()
             val_g_loss, val_d_loss = self.adv_loop('val')
+
+            gen_scheduler.step(val_g_loss)
+            disc_scheduler.step(val_d_loss)
 
             if best_loss is None or val_g_loss < best_loss :
                 best_loss = val_g_loss 
