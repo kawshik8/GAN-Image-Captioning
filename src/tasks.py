@@ -155,6 +155,7 @@ class COCO_data(Dataset):
                 return_token_type_ids=False,
                 return_tensors='pt'
             )
+        
 
         captions['input_ids'] = captions['input_ids'].squeeze().type(torch.LongTensor)
         captions['attention_mask'] = captions['attention_mask'].squeeze().type(torch.LongTensor)
@@ -169,12 +170,25 @@ class COCO_data(Dataset):
 
         return images, captions, lengths, captions["input_ids"].shape[1]
 
+    def convert_to_tokens_references(self,captions):
+        batch_captions = []
+        for cap in captions:     
+            batch_captions.append([self.tokenizer.convert_ids_to_tokens(cap, skip_special_tokens = True)])
+        return batch_captions
+
+    def convert_to_tokens_candidates(self,captions):
+        batch_captions = []
+        for cap in captions:    
+            batch_captions.append(self.tokenizer.convert_ids_to_tokens(cap, skip_special_tokens = True))
+        return batch_captions
+
+
 if __name__ == '__main__':
      
     dataset = COCO_data("../coco_data/dataset_coco.json","../coco_data",'train',captions_per_image=1)
-    loader = DataLoader(dataset, batch_size=16, shuffle=False, collate_fn=collate_fn, num_workers=4)
-    
-    print(dataset.word_to_index)
+    loader = DataLoader(dataset, batch_size=16, shuffle=False, collate_fn=dataset.collate_fn, num_workers=4)
+
+    # print(dataset.word_to_index)
 #     with tqdm(total=len(dataset)) as progress_bar:
 #         for i,instance in enumerate(loader):
 #             image, caption = instance

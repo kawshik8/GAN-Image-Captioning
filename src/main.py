@@ -39,11 +39,9 @@ args.vocab_size = train_dataset.vocab_size
 
 val_dataset = COCO_data(args.data_dir + "/dataset_coco.json", args.data_dir, 'val',args.image_size, args.captions_per_image, max_seq_len=args.max_seq_len, dataset_percent=args.dataset_percent)
 
-#create a validation loader 
 
-# train_data = [(images,captions,lengths)]
-# val_data = [(images,captions,lengths)]
 inst = GANInstructor(args, train_dataset, val_dataset) #Pass the validation loader for second argument. 
 
-inst._run()
+bleu_weights = [0.25,0.25,0.25,0.25] # 4 gram uniform weights -> BLEU-4
+inst._run(bleu_weights)
 #inst.evaluate(dataloader=val_data, isTest=True) #For testing still need to calculate accuracy.
