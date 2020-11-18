@@ -1,9 +1,14 @@
+import operator
 import torch
 import math
 import torch.nn as nn
 import torchvision.models as models
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from utils import BeamSearchNode
+from Queue import PriorityQueue
+SOS_token = 0
+EOS_token = 2
 from transformer import *
 
 def get_resnet_model(model_type):
@@ -26,31 +31,17 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         resnet = get_resnet_model(args.resnet_type)
         modules = list(resnet.children())[:-2]      # delete the last fc layer and avg pool 2d.
-        self.resnet = nn.Sequential(*modules) 
-
-        if args.gen_model_output == 'grid' and args.gen_model_type != 'lstm':
-            self.conv = nn.Conv2d(OUT_IMAGE_FEATURE_DIMENSION_DICT[args.resnet_type], args.gen_embed_dim, 3, 1)
-            self.bn = nn.BatchNorm2d(args.gen_embed_dim, momentum=0.01)
-        else:
-            self.pool = nn.AdaptiveAvgPool2d((1,1))
-            self.linear = nn.Linear(resnet.fc.in_features, args.gen_embed_dim)
-            self.bn = nn.BatchNorm1d(args.gen_embed_dim, momentum=0.01)
-
+        self.resnet = nn.Sequential(*modules)
+        self.linear = nn.Linear(resnet.fc.in_features, args.gen_embed_dim)
+        self.bn = nn.BatchNorm1d(args.gen_embed_dim, momentum=0.01)
         self.args = args
-        self.freeze_cnn = args.freeze_cnn
 
     def forward(self, images):
         """Extract feature vectors from input images."""
-        with (torch.no_grad() if self.freeze_cnn else torch.enable_grad()):
+        with torch.no_grad():
             features = self.resnet(images)
-
-        if args.gen_model_output == 'grid' and args.gen_model_type != 'lstm':
-            features = self.bn(self.conv(features))
-        else:
-            features = self.pool(features)
-            features = features.reshape(features.size(0), -1)
-            features = self.bn(self.linear(features))
-
+        features = features.reshape(features.size(0), -1)
+        features = self.bn(self.linear(features))
         return features
 
 class Decoder(nn.Module):
@@ -58,14 +49,7 @@ class Decoder(nn.Module):
         """Set the hyper-parameters and build the layers."""
         super(Decoder, self).__init__()
         self.embed = nn.Embedding(args.vocab_size, args.gen_embed_dim)
-        if args.gen_model_type == 'lstm':
-            self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True)
-        elif args.gen_model_type == 'transformer' and args.conditional_gan:
-            decoder_layer = TransformerDecoderLayer(args.gen_hidden_dim, args.gen_nheads, args.gen_hidden_dim)
-            self.transformer = TransformerDecoder(decoder_layer, args.gen_num_layers)
-        elif args.gen_model_type == 'transformer' and not args.conditional_gan:
-            encoder_layer = TransformerEncoderLayer(args.gen_hidden_dim, args.gen_nheads, args.gen_hidden_dim)
-            self.transformer = TransformerEncoder(encoder_layer, args.gen_num_layers)
+        self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True)
         self.linear = nn.Linear(args.gen_hidden_dim, args.vocab_size)
         self.max_seq_length = args.max_seq_len
         self.temperature = args.temperature
@@ -91,71 +75,132 @@ class Decoder(nn.Module):
     def sample(self, features, states=None, pretrain=False, max_caption_len=34):
         """Generate captions for given image features using greedy search."""
         sampled_ids = []
-
-        # print(features.shape)
-        
-        if self.args.conditional_gan:
-            image_features, inputs = features
-
-            if self.args.gen_model_type == 'transformer':
-                inputs = inputs.unsqueeze(1)
-
-                if args.gen_model_output == 'pool':
-                    image_features = image_features.unsqueeze(1) 
-                else:
-                    image_features = image_features.view(image_features.size(0),-1,image_features.size(1))
-
-            else:
-                inputs = image_features.unsqueeze(1)
-        else:
-            inputs = features.unsqueeze(1)
-
+        inputs = features.unsqueeze(1)
         outputs = []
         for i in range(max_caption_len):
+            hiddens, states = self.lstm(inputs, states)          # hiddens: (batch_size, 1, hidden_size)
             
-            if self.args.gen_model_type == 'lstm':
-    #            print(inputs.shape)
-                hiddens, states = self.lstm(inputs, states)          # hiddens: (batch_size, 1, hidden_size)
-            else:
-                if self.args.conditional_gan:
-    #                print("inputs, image features: ", inputs.shape, image_features.shape)
-                    hiddens = self.transformer(tgt=inputs.transpose(0,1),memory=image_features.transpose(0,1)).transpose(0,1)
-                else:
-    #                print("inputs: ", inputs.shape)
-                    hiddens = self.transformer(inputs.transpose(0,1)).transpose(0,1)
-            
-            # print(hiddens.shape)
-
             if pretrain:
-                pred = self.linear(hiddens)
-                outputs.append(pred[:,-1])
+                pred = self.linear(hiddens.squeeze(1))
+                outputs.append(pred)
                 pred = F.softmax(pred, dim=-1)
-                # print(pred.shape)
             else:
-                gumbel_t = self.add_gumbel(self.linear(hiddens))            # outputs:  (batch_size, vocab_size)
+                gumbel_t = self.add_gumbel(self.linear(hiddens.squeeze(1)))            # outputs:  (batch_size, vocab_size)
                 pred = F.softmax(gumbel_t * self.temperature, dim=-1)  
-                # print(pred.shape)
-                outputs.append(pred[:,-1])
+                outputs.append(pred)
             
-            pred_index = pred.max(-1)[1]
-
-            pred_index = pred_index[:,-1]                                     # predicted: (batch_size)          
-
-            # print(pred_index)
+#             print(pred.shape)
+            _, pred_index = pred.max(1)                        # predicted: (batch_size)
             sampled_ids.append(pred_index)
-            if self.args.gen_model_type == 'lstm':
-                inputs = self.embed(pred_index.detach())                       # inputs: (batch_size, embed_size)
-                inputs = inputs.unsqueeze(1)                                    # inputs: (batch_size, 1, embed_size)
-            elif self.args.gen_model_type == 'transformer':
-                inputs = torch.cat([inputs,self.embed(pred_index.detach().unsqueeze(1))],1)                    # inputs: (batch_size, n+1, embed_size)
-
-            
-
+            inputs = self.embed(pred_index.detach())                       # inputs: (batch_size, embed_size)
+            inputs = inputs.unsqueeze(1)                         # inputs: (batch_size, 1, embed_size)
         sampled_ids = torch.stack(sampled_ids, 1)                # sampled_ids: (batch_size, max_seq_length)
 #         print(len(outputs),outputs[0].shape)
         outputs = torch.stack(outputs, 1)
 #         print(outputs.shape)
         return outputs, sampled_ids
+
+    def beam_decode(self, target_tensor_batchsize, features, decoder_hiddens= None, pretrain=False):
+        '''
+        :param target_tensor: target indexes tensor of shape [B, T] where B is the batch size and T is the maximum length of the output sentence
+        :param decoder_hidden: input tensor of shape [1, B, H] for start of the decoding
+        :param encoder_outputs: if you are using attention mechanism you can pass encoder outputs, [T, B, H] where T is the maximum length of input sentence
+        :return: decoded_batch
+        '''
+
+        beam_width = 10
+        topk = 1  # how many sentence do you want to generate
+        decoded_batch = []
+
+        # decoding goes sentence by sentence
+        for idx in range(target_tensor_batchsize):
+            # if isinstance(decoder_hiddens, tuple):  # LSTM case
+            #     decoder_hidden = (decoder_hiddens[0][:,idx, :].unsqueeze(0),decoder_hiddens[1][:,idx, :].unsqueeze(0))
+            # else:
+            #     decoder_hidden = decoder_hiddens[:, idx, :].unsqueeze(0)
+
+            # Start with the start of the sentence token
+            decoder_input = features.unsqueeze(1)
+
+            # Number of sentence to generate
+            endnodes = []
+            number_required = min((topk + 1), topk - len(endnodes))
+
+            # starting node -  hidden vector, previous node, word id, logp, length
+            node = BeamSearchNode(decoder_hiddens, None, SOS_token, 0, 1)
+            nodes = PriorityQueue()
+
+            # start the queue
+            nodes.put((-node.eval(), node))
+            qsize = 1
+
+            # start beam search
+            while True:
+                # give up when decoding takes too long
+                if qsize > 2000: break
+
+                # fetch the best node
+                score, n = nodes.get()
+                decoder_input = n.wordid
+                decoder_hidden = n.h
+
+                if n.wordid.item() == EOS_token and n.prevNode != None:
+                    endnodes.append((score, n))
+                    # if we reached maximum # of sentences required
+                    if len(endnodes) >= number_required:
+                        break
+                    else:
+                        continue
+
+                # decode for one step using decoder
+                decoder_output, decoder_hidden = self.lstm(decoder_input, decoder_hidden)
+                if pretrain:
+                    pred = self.linear(decoder_output.squeeze(1))
+                    # outputs.append(pred)
+                    pred = F.softmax(pred, dim=-1)
+                else:
+                    gumbel_t = self.add_gumbel(self.linear(decoder_output.squeeze(1)))            # outputs:  (batch_size, vocab_size)
+                    pred = F.softmax(gumbel_t * self.temperature, dim=-1)  
+                    # outputs.append(pred)
+
+                # PUT HERE REAL BEAM SEARCH OF TOP
+                log_prob, indexes = torch.topk(pred, beam_width)
+                nextnodes = []
+
+                for new_k in range(beam_width):
+                    decoded_t = indexes[0][new_k].view(1, -1)
+                    log_p = log_prob[0][new_k].item()
+
+                    node = BeamSearchNode(decoder_hidden, n, decoded_t, n.logp + log_p, n.leng + 1)
+                    score = -node.eval()
+                    nextnodes.append((score, node))
+
+                # put them into queue
+                for i in range(len(nextnodes)):
+                    score, nn = nextnodes[i]
+                    nodes.put((score, nn))
+                    # increase qsize
+                qsize += len(nextnodes) - 1
+
+            # choose nbest paths, back trace them
+            if len(endnodes) == 0:
+                endnodes = [nodes.get() for _ in range(topk)]
+
+            utterances = []
+            for score, n in sorted(endnodes, key=operator.itemgetter(0)):
+                utterance = []
+                utterance.append(n.wordid)
+                # back trace
+                while n.prevNode != None:
+                    n = n.prevNode
+                    utterance.append(n.wordid)
+
+                utterance = utterance[::-1]
+                utterances.append(utterance)
+
+            decoded_batch.append(utterances)
+
+        return decoded_batch
     
     #@staticmethod
     def add_gumbel(self, o_t, eps=1e-10, gpu=0):
@@ -174,11 +219,9 @@ class Decoder(nn.Module):
 
 class Generator(nn.Module):
     def __init__(self, args):
-        """Load the pretrained ResNet and replace top fc layer."""
+        """Load the pretrained ResNet-152 and replace top fc layer."""
         super(Generator, self).__init__()
-
-        if args.conditional_gan:
-            self.encoder = Encoder(args)
+        self.encoder = Encoder(args)
         self.decoder = Decoder(args)
         self.args = args
         self.init_params()
@@ -187,12 +230,9 @@ class Generator(nn.Module):
         """Extract feature vectors from input images."""
         if self.args.cgan:
             features = self.encoder(images)
-            features = [features,self.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))]
         else:
             features = self.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
         pred, hidden = self.decoder(features, caps, lengths, pretrain)
-
-        # print(pred.shape, hidden.shape)
         return pred, hidden
 
     def init_params(self):
@@ -216,8 +256,8 @@ if __name__=='__main__':
     sample_lengths = (torch.ones(b, dtype=torch.long)*34).to(args.device)
 
     if args.conditional_gan:
-        features = [generator.encoder(sample_images),generator.decoder.embed(torch.ones(b,1, dtype=torch.long).squeeze(1).to(args.device))]
-        print("image features: ",generator.encoder(sample_images).shape)
+        features = generator.encoder(sample_images)
+        print("image features: ",features.shape)
     else:
         features = generator.decoder.embed(torch.ones(b,1, dtype=torch.long).squeeze(1).to(args.device))
         print("start token features: ",features.shape)
@@ -227,5 +267,5 @@ if __name__=='__main__':
 
     adv_pred,_ = generator.decoder.sample(features)
 
-    print(pretrain_pred.shape, adv_pred.shape)
+    print(features.shape, pretrain_pred.shape, adv_pred.shape)
 
