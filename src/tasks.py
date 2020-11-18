@@ -9,14 +9,14 @@ import torch
 #from scipy.misc import imread, imresize
 from tqdm import tqdm
 from collections import Counter
-from random import seed, choice, sample
+import random
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from tqdm import tqdm
 import pickle
 
 from transformers import RobertaTokenizer
-
+random.seed(42)
 class COCO_data(Dataset):
     def __init__(self, captions_path, image_path, split, image_size=256, captions_per_image=5, max_seq_len=34, dataset_percent=1.0):
         
@@ -64,24 +64,17 @@ class COCO_data(Dataset):
                     if split not in row['filepath']:
                         captions.remove(t_captions[i])
                     else:
-                                
-                        for caption in row['sentences'][:captions_per_image]:
-                            caption_dict = {}
-                            for key in row:
-                                if type(row[key]) != list:
-                                    caption_dict[key] = row[key]
-                            
-                            for key in caption:
-                                caption_dict[key] = caption[key]
-                                
-                            self.captions.append(caption_dict)
-                                
-                            # if vocab_dicts is None:
-                            #     for word in caption['tokens']:
-                            #         if word not in self.word_to_index:
-                            #             curr_len = len(list(self.word_to_index.keys()))
-                            #             self.word_to_index[word] = curr_len
-                            #             self.index_to_word[curr_len] = word
+                        caption_dict = {}
+                        for key in row:
+                                caption_dict[key] = row[key]
+                        self.captions.append(caption_dict)
+                        # for caption in row['sentences'][:captions_per_image]:    
+                        #     if vocab_dicts is None:
+                        #         for word in caption['tokens']:
+                        #             if word not in self.word_to_index:
+                        #                 curr_len = len(list(self.word_to_index.keys()))
+                        #                 self.word_to_index[word] = curr_len
+                        #                 self.index_to_word[curr_len] = word
 
                         
 
@@ -127,7 +120,8 @@ class COCO_data(Dataset):
         image = Image.open(image_path)
         image = self.transforms(image)
 
-        caption = caption_dict['tokens']
+        caption = random.choice(caption_dict['sentences'])['tokens']
+
 #         self.caption_indices_dict[captions['imgid']] += 1
         #print(index)
 #         print(index,image_path,caption)
