@@ -132,7 +132,7 @@ class GANInstructor():
             val_epoch_loss = np.mean(gen_loss)
 
             if epoch%self.args.pre_log_step == 0:
-                perplexity = calc_pp(self.pre_eval_loader, self.gen, epoch, self.log, self.args, self.cgan)
+                perplexity = np.exp(val_epoch_loss)
                 self.log.info("Epoch {}: \n \t Train: {} \n\t Val: {} \n\t PP: {} ".format(epoch,train_epoch_loss,val_epoch_loss, perplexity))
 
             if best_loss is None or val_epoch_loss < best_loss :
@@ -253,7 +253,7 @@ class GANInstructor():
 
             # TEST
             if adv_epoch % self.args.adv_log_step == 0 or adv_epoch == self.args.adv_epochs - 1:
-                perplexity = calc_pp(self.adv_eval_loader, self.gen, adv_epoch, self.log, self.args, self.cgan)
+                perplexity = np.exp(val_g_loss)
                 self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f PP: %.4f' % (
                     adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss, perplexity))
 
