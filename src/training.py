@@ -9,7 +9,8 @@ from generator import *
 from discriminator import *
 import numpy as np
 from torch.utils.data import DataLoader
-from tasks import *#collate_fn
+from tasks import *
+from metrics.perplexity import calc_pp
 
 class GANInstructor():
     def __init__(self, args, train_dataset, dev_dataset):
@@ -49,6 +50,7 @@ class GANInstructor():
     def genpretrain_loop(self, what):
 
         gen_loss = []
+        criterion = nn.CrossEntropyLoss(ignore_index=1)
 
         with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total = (len(self.train_dataset) if what=='train' else len(self.dev_dataset))) as progress:
             for batch_idx, (images, captions, lengths, max_caption_len) in enumerate((self.pre_train_loader if what=='train' else self.pre_eval_loader)):
@@ -92,7 +94,7 @@ class GANInstructor():
 #                 targets = pack_padded_sequence(real_captions, lengths, batch_first=True, enforce_sorted=False)[0]
 #                 outputs = pack_padded_sequence(gen_captions, lengths, batch_first=True, enforce_sorted=False)[0]      
         #        print("captions shape: ",real_captions.shape, gen_captions.shape)
-                criterion = nn.CrossEntropyLoss()
+                
     
                 loss = criterion(gen_captions.view(-1,gen_captions.size(-1)), real_captions.view(-1))
 
@@ -118,6 +120,7 @@ class GANInstructor():
         patience = 0
         for epoch in range(self.args.pretrain_epochs):
 
+            
             self.gen.train()
             gen_loss = self.genpretrain_loop('train')
             train_epoch_loss = np.mean(gen_loss)       
@@ -129,11 +132,12 @@ class GANInstructor():
             val_epoch_loss = np.mean(gen_loss)
 
             if epoch%self.args.pre_log_step == 0:
-                self.log.info("Epoch {}: \n \t Train: {} \n\t Val: {} ".format(epoch,train_epoch_loss,val_epoch_loss))
+                perplexity = calc_pp(self.pre_eval_loader, self.gen, epoch, self.log, self.args, self.cgan)
+                self.log.info("Epoch {}: \n \t Train: {} \n\t Val: {} \n\t PP: {} ".format(epoch,train_epoch_loss,val_epoch_loss, perplexity))
 
             if best_loss is None or val_epoch_loss < best_loss :
                 best_loss = val_epoch_loss
-                torch.save(self.gen.state_dict(), args.model_dir + "/pretrained_model.ckpt")
+                torch.save(self.gen.state_dict(), self.args.model_dir + "/pretrained_model.ckpt")
                 patience = 0
             elif patience >= self.pretrain_patience:
                 self.log.info("Early Stopping at Epoch {}".format(epoch))
@@ -249,8 +253,9 @@ class GANInstructor():
 
             # TEST
             if adv_epoch % self.args.adv_log_step == 0 or adv_epoch == self.args.adv_epochs - 1:
-                self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f' % (
-                    adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss))
+                perplexity = calc_pp(self.adv_eval_loader, self.gen, adv_epoch, self.log, self.args, self.cgan)
+                self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f PP: %.4f' % (
+                    adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss, perplexity))
 
             if best_loss is None or val_g_loss < best_loss :
                 best_loss = val_g_loss 
