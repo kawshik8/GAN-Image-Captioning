@@ -140,7 +140,7 @@ def add_training_args(parser):
                             default=64,
                             help='number of batches to train at each step of pretrain evaluation')
 
-    parser.add_argument('--pretrain_patience',
+    parser.add_argument('--pretrain-lr-patience',
                             type=int,
                             default=10,
                             help='patience for pretrain LROnPlateau scheduler')
@@ -152,7 +152,7 @@ def add_training_args(parser):
                             default=1e-4,
                             help='learning rate for adversarial training of generator')
     
-    parser.add_argument('--gen_patience',
+    parser.add_argument('--gen-lr-patience',
                             type=int,
                             default=10,
                             help='patience for generator LROnPlateau scheduler')
@@ -162,7 +162,7 @@ def add_training_args(parser):
                             default=1e-4,
                             help='learning rate for adversarial training of generator')
 
-    parser.add_argument('--disc_patience',
+    parser.add_argument('--disc-lr-patience',
                             type=int,
                             default=10,
                             help='patience for discriminator LROnPlateau scheduler')
