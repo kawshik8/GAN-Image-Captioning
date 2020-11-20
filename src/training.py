@@ -9,8 +9,10 @@ from generator import *
 from discriminator import *
 import numpy as np
 from torch.utils.data import DataLoader
-from tasks import collate_fn
-from torchtext.data.metrics import bleu_score
+from tasks import *
+from metrics.perplexity import calc_pp
+import nltk
+from nltk.translate.bleu_score import SmoothingFunction
 
 class GANInstructor():
     def __init__(self, args, train_dataset, dev_dataset):
@@ -25,16 +27,17 @@ class GANInstructor():
         self.gen_opt = optim.Adam(self.gen.parameters(), lr=args.gen_lr)
         self.disc_opt = optim.Adam(self.disc.parameters(), lr=args.disc_lr)
 
+
         #Schedulers ReduceLROnPlateau
-        self.pretrain_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(pretrain_opt, patience=args.pretrain_patience, verbose=True)
-        self.gen_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(gen_opt, patience=args.gen_patience, verbose=True)
-        self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(disc_opt, patience=args.disc_patience, verbose=True)
+        self.pretrain_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(pretrain_opt, patience=args.pretrain_lr_patience, verbose=True)
+        self.gen_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(gen_opt, patience=args.gen_lr_patience, verbose=True)
+        self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(disc_opt, patience=args.disc_lr_patience, verbose=True)
+        
+        self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, num_workers=args.num_workers, collate_fn=train_dataset.collate_fn)
+        self.pre_eval_loader = DataLoader(dev_dataset, shuffle=False, batch_size=args.pre_eval_batch_size, num_workers=args.num_workers, collate_fn=dev_dataset.collate_fn)
 
-        self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, collate_fn=collate_fn, num_workers=4)
-        self.pre_eval_loader = DataLoader(dev_dataset, batch_size=args.pre_eval_batch_size, collate_fn=collate_fn, num_workers=4)
-
-        self.adv_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.adv_train_batch_size, collate_fn=collate_fn, num_workers=4)
-        self.adv_eval_loader = DataLoader(dev_dataset, batch_size=args.adv_eval_batch_size, collate_fn=collate_fn, num_workers=4)
+        self.adv_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.adv_train_batch_size, num_workers=args.num_workers, collate_fn=train_dataset.collate_fn)
+        self.adv_eval_loader = DataLoader(dev_dataset, shuffle=False, batch_size=args.adv_eval_batch_size, num_workers=args.num_workers, collate_fn=dev_dataset.collate_fn)
        
         self.train_dataset = train_dataset
         self.dev_dataset = dev_dataset
@@ -49,83 +52,93 @@ class GANInstructor():
         self.args = args
         self.cgan = (self.args.conditional_gan==1)
         self.adv_epoch = -1
+        self.pretrain_patience = self.args.pretrain_patience
+        self.advtrain_patience = self.args.advtrain_patience
 
     def genpretrain_loop(self, what):
 
         gen_loss = []
-
+        criterion = nn.CrossEntropyLoss(ignore_index=1)
+        all_references = []
+        all_candidates = []
         with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total = (len(self.train_dataset) if what=='train' else len(self.dev_dataset))) as progress:
             for batch_idx, (images, captions, lengths, max_caption_len) in enumerate((self.pre_train_loader if what=='train' else self.pre_eval_loader)):
                 
-#                 print((self.pre_train_loader if what=='train' else self.pre_eval_loader).dataset.vocab_size, flush=True)
-#                 print(captions, flush=True)
-#                 print(lengths, flush=True)
-                
-                images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)
-                real_captions = captions 
-                # self.pretrain_opt.zero_grad()
+                r_captions = self.train_dataset.convert_to_tokens_references(captions['input_ids'])
+                all_references += r_captions
 
-                #images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)              
+                images = images.to(self.args.device) 
+                lengths = lengths.to(self.args.device)
+                attn_mask = captions["attention_mask"].to(self.args.device)
+                captions = captions["input_ids"].to(self.args.device)
+                real_captions = captions        
                 
                 if self.cgan:
-                    features = self.gen.encoder(images)
+                    features = [self.gen.encoder(images),self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))]
                 else:
-                    features = self.gen.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
-#                 fake_captions = self.gen.decoder.sample(features)
-         
+                    features = self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
                 gen_captions, gen_caption_ids = self.gen.decoder.sample(features, pretrain=True, max_caption_len=max_caption_len)
-
                 real_captions, gen_captions = real_captions.to(self.args.device), gen_captions.to(self.args.device)
 
-                bleu = bleu_score(gen_caption_ids, real_captions.unsqueeze(0))
-                print(bleu)
-#                 print(gen_captions.shape, real_captions.shape)
-#                 targets = pack_padded_sequence(real_captions, lengths, batch_first=True, enforce_sorted=False)[0]
-#                 outputs = pack_padded_sequence(gen_captions, lengths, batch_first=True, enforce_sorted=False)[0]      
-
-                criterion = nn.CrossEntropyLoss()
+                g_captions = self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
+                all_candidates += g_captions             
     
                 loss = criterion(gen_captions.view(-1,gen_captions.size(-1)), real_captions.view(-1))
-
-                #print(loss)
 
                 if what == 'train':
                     self.optimize(self.pretrain_opt, loss, self.gen)
 
                 gen_loss.append(loss.item())
 
-                self.writer.add_scalar('GenPreTraining_train_loss' if what=='train' else 'GenPreTraining_val_loss',loss,self.pretrain_steps)
-                
+                self.writer.add_scalar('GenPreTraining_train_loss' if what=='train' else 'GenPreTraining_val_loss',loss,self.pretrain_steps)         
                 progress.update(len(images))
                 progress.set_postfix(loss=loss.item())        
         
-        return gen_loss
+        # print(all_references[-10:], all_candidates[-10:])
+        return (gen_loss , all_references, all_candidates)
 
-    def pretrain_generator(self, epochs):
+    def pretrain_generator(self, epochs , weights=[0.25,0.25,0.25,0.25]):
         self.log.info("Pretraining Generator")
         total_loss = 0
 
         best_loss = None
+        patience = 0
         for epoch in range(self.args.pretrain_epochs):
 
+            
             self.gen.train()
-            gen_loss = self.genpretrain_loop('train')
+            gen_loss, ref, gen = self.genpretrain_loop('train')
             train_epoch_loss = np.mean(gen_loss)       
 
+            train_bleu = nltk.translate.bleu_score.corpus_bleu(ref,gen,weights = weights,smoothing_function=SmoothingFunction().method1) #Default 4 gram -> BLEU-4
             total_loss += train_epoch_loss 
 
             self.gen.eval()
-            gen_loss = self.genpretrain_loop('val')
+            gen_loss, ref, gen = self.genpretrain_loop('val')
             val_epoch_loss = np.mean(gen_loss)
+
 
             self.pretrain_scheduler.step(val_epoch_loss)
 
+            val_bleu = nltk.translate.bleu_score.corpus_bleu(ref,gen,weights = weights,smoothing_function=SmoothingFunction().method1) #Default 4 gram -> BLEU-4
+
+            if epoch%self.args.pre_log_step == 0:
+                train_perplexity = np.exp(train_epoch_loss)
+                val_perplexity = np.exp(val_epoch_loss)
+                self.log.info("Epoch {}: \n \t Train Loss: {} \n\t Val Loss: {} \n\t Train PP: {} \n\t Val PP: {} \n\t Train BLEU: {} \n\t Val BLEU: {} " \
+                                .format(epoch,train_epoch_loss,val_epoch_loss, train_perplexity, val_perplexity,train_bleu, val_bleu))
+
+
             if best_loss is None or val_epoch_loss < best_loss :
                 best_loss = val_epoch_loss
-                torch.save(self.gen.state_dict(), args.model_dir + "/pretrained_model.ckpt")
-            
-            if epoch%self.args.pre_log_step == 0:
-                self.log.info("Epoch {}: \n \t Train: {} \n\t Val: {} ".format(epoch,train_epoch_loss,val_epoch_loss))
+                torch.save(self.gen.state_dict(), self.args.model_dir + "/pretrained_model.ckpt")
+                patience = 0
+            elif patience >= self.pretrain_patience:
+                self.log.info("Early Stopping at Epoch {}".format(epoch))
+                break
+            else:
+                patience += 1
+
 
             self.pretrain_steps+=1
 
@@ -136,33 +149,37 @@ class GANInstructor():
         total_disc_loss = 0
         
         float_epoch = 0.0
+        all_references = []
+        all_candidates = []
         with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total=(len(self.train_dataset) if what == 'train' else len(self.dev_dataset))) as progress:
             gen_loss = []
             disc_loss = []
             for batch_idx, (images, captions, lengths, max_caption_len) in enumerate((self.adv_train_loader if what=='train' else self.adv_eval_loader)):
                 
                 float_epoch += 1
-                images,captions,lengths = images.to(self.args.device), captions.to(self.args.device), lengths.to(self.args.device)
-                real_captions = captions #train_data -> (images,lengths,captions)
-          
-                # self.disc_opt.zero_grad()
-                # self.gen_opt.zero_grad()
+
+                r_captions = self.train_dataset.convert_to_tokens_references(captions['input_ids'])
+                all_references += r_captions
+
+                images,lengths = images.to(self.args.device), lengths.to(self.args.device)
+                attn_mask = captions["attention_mask"].to(self.args.device)
+                captions = captions["input_ids"].to(self.args.device)
+
+                real_captions = captions 
+   
                 if self.cgan:
-                    features = self.gen.encoder(images)
+                    features = [self.gen.encoder(images),self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))]
                 else:
-                    features = self.gen.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
-#                 fake_captions = self.gen.decoder.sample(features)
-         
+                    features = self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
+       
                 gen_captions, gen_caption_ids = self.gen.decoder.sample(features, max_caption_len=max_caption_len)
                 fake_captions = gen_captions.detach()
-
                 fake_captions = fake_captions.to(self.args.device)
 
-                bleu = bleu_score(gen_caption_ids, real_captions.unsqueeze(0))
-                print(bleu)
+                g_captions = self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
+                all_candidates += g_captions
 
                 real_captions = F.one_hot(real_captions, self.args.vocab_size).float()
-#                 fake_captions = F.one_hot(fake_captions, self.args.vocab_size).float()
 
                 # ===Train===
                 d_out_real = self.disc(real_captions)
@@ -191,7 +208,7 @@ class GANInstructor():
         total_gen_loss = np.mean(gen_loss)
         total_disc_loss = np.mean(disc_loss)
 
-        return (total_gen_loss, total_disc_loss)
+        return (total_gen_loss, total_disc_loss, all_references, all_candidates)
 
     def update_temperature(self, i, N):
         self.gen.decoder.temperature = get_fixed_temperature(self.args.temperature, i, N, self.args.temp_adpt)
@@ -204,15 +221,15 @@ class GANInstructor():
             torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.clip_norm)
         opt.step()
 
-    def _run(self):
+    def _run(self, weights=[0.25,0.25,0.25,0.25]):
     
         ## === PRETRAINING GENERATOR === ##
-        self.pretrain_generator(self.args.pretrain_epochs)
+        self.pretrain_generator(self.args.pretrain_epochs, weights)
 
         # # ===ADVERSARIAL TRAINING===
         self.log.info('Starting Adversarial Training...')
-#         progress = tqdm(range(self.args.adv_epochs))
         
+        patience = 0
         best_loss = None
         for adv_epoch in range(self.args.adv_epochs):
 
@@ -220,11 +237,19 @@ class GANInstructor():
             
             self.disc.train()
             self.gen.train()
-            train_g_loss, train_d_loss = self.adv_loop('train')  # Discriminator
+            train_g_loss, train_d_loss, ref, gen = self.adv_loop('train')  # Discriminator
+            train_bleu = nltk.translate.bleu_score.corpus_bleu(ref,gen,weights = weights,smoothing_function=SmoothingFunction().method1) #Default 4 gram BLEU-4
             
             self.disc.eval()
             self.gen.eval()
-            val_g_loss, val_d_loss = self.adv_loop('val')
+            val_g_loss, val_d_loss, ref, gen= self.adv_loop('val')
+            val_bleu = nltk.translate.bleu_score.corpus_bleu(ref,gen,weights = weights,smoothing_function=SmoothingFunction().method1) #Default 4 gram BLEU-4
+            # TEST
+            if adv_epoch % self.args.adv_log_step == 0 or adv_epoch == self.args.adv_epochs - 1:
+                val_perplexity = np.exp(val_g_loss)
+                train_perplexity = np.exp(train_g_loss)
+                self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f \n\t Train PP: %.4f \n\t Val PP: %.4f \n\t Train BLEU: %.4f \n\t Val BLEU: %.4f' %\
+                              (adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss, train_perplexity, val_perplexity, train_bleu, val_bleu))
 
             gen_scheduler.step(val_g_loss)
             disc_scheduler.step(val_d_loss)
@@ -233,11 +258,9 @@ class GANInstructor():
                 best_loss = val_g_loss 
                 torch.save({"generator":self.gen.state_dict(),
                             "discriminator":self.disc.state_dict()}, self.model_dir + "/adv_model.ckpt")
-    
-            # TEST
-            if adv_epoch % self.args.adv_log_step == 0 or adv_epoch == self.args.adv_epochs - 1:
-                self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f' % (
-                    adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss))
-
-                # if cfg.if_save and not cfg.if_test:
-                #     self._save('ADV', adv_epoch)
+                patience = 0
+            elif patience >= self.advtrain_patience:
+                self.log.info("Early Stopping at Epoch {}".format(epoch))
+                break
+            else:
+                patience += 1

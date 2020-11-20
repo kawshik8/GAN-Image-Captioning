@@ -85,7 +85,6 @@ class Discriminator(nn.Module):
                 elif self.args.disc_init == 'normal':
                     torch.nn.init.normal_(param, std=stddev)
 
-
 if __name__=='__main__':
     from args import get_args
 

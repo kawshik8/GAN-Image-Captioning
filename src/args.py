@@ -9,6 +9,12 @@ def add_model_args(parser):
 
     ################### Generator ###################
 
+    parser.add_argument('--resnet-type',
+                            type=str,
+                            default="resnet18",
+                            choices=["resnet18","resnet34","resnet50","resnet101","resnet152"],
+                            help='resnet model to use')
+
     parser.add_argument('--gen-hidden-dim',
                             type=int,
                             default=512,
@@ -16,18 +22,41 @@ def add_model_args(parser):
 
     parser.add_argument('--gen-embed-dim',
                             type=int,
-                            default=32,
+                            default=512,
                             help='embedding dimension of generator')
 
     parser.add_argument('--gen-num-layers',
                             type=int,
-                            default=1,
+                            default=6,
                             help='number of layers in generator')
+
+    parser.add_argument('--gen-nheads',
+                            type=int,
+                            default=8,
+                            help='number of heads for multi headed attention in generators')
 
     parser.add_argument('--gen-init',
                             type=str,
                             default='uniform',
                             help='Initialization strategy for generator weights')
+
+    parser.add_argument('--gen-model-type',
+                            type=str,
+                            default='transformer',
+                            choices=["transformer","lstm"],
+                            help='type of generator to use')
+
+    parser.add_argument('--gen-model-output',
+                            type=str,
+                            default='grid',
+                            choices=["grid","pool"],
+                            help='type of cnn output to use')
+
+    parser.add_argument('--freeze-cnn',
+                            type=int,
+                            default=1,
+                            choices=[0,1],
+                            help='use cnn as feature extractor? or backpropogate gradients?')
 
     ################### Discriminator ###################
 
@@ -77,7 +106,7 @@ def add_data_args(parser):
 
     parser.add_argument('--vocab-size',
                             type=int,
-                            default=-1,
+                            default=100,
                             help='vocab size for training')
 
     parser.add_argument('--max-seq-len',
@@ -87,7 +116,7 @@ def add_data_args(parser):
 
     parser.add_argument('--padding-idx',
                             type=int,
-                            default=0,
+                            default=1,
                             help='index of padding token in vocab')
 
     
@@ -100,7 +129,7 @@ def add_data_args(parser):
 
     parser.add_argument('--captions-per-image',
                             type=int,
-                            default=1,
+                            default=5,
                             help='no of captions to use per image')
     
     ################### Common Part ###################
@@ -110,6 +139,10 @@ def add_data_args(parser):
                             default=1.0,
                             help='percentage of dataset to use for training')
 
+    parser.add_argument('--num-workers',
+                            type=int,
+                            default=4,
+                            help='no of workers in data loader')
     #args = parser.parse_args()
 
     #return args
@@ -127,23 +160,30 @@ def add_training_args(parser):
 
     parser.add_argument('--pretrain-epochs',
                             type=int,
-                            default=0,
+                            default=50,
                             help='number of epochs for pretraining generator')
 
     parser.add_argument('--pre-train-batch-size',
                             type=int,
-                            default=64,
+                            default=32,
                             help='number of batches to train at each step of pretrain training')
 
     parser.add_argument('--pre-eval-batch-size',
                             type=int,
-                            default=64,
+                            default=32,
                             help='number of batches to train at each step of pretrain evaluation')
+
 
     parser.add_argument('--pretrain-lr-patience',
                             type=int,
                             default=10,
                             help='patience for pretrain LROnPlateau scheduler')
+
+    parser.add_argument('--pretrain-patience',
+                            type=int,
+                            default=10,
+                            help='number of epochs to wait before early stopping')
+
 
     #################### Adversarial Training ###################
 
@@ -174,7 +214,7 @@ def add_training_args(parser):
 
     parser.add_argument('--adv-epochs',
                             type=int,
-                            default=30,
+                            default=50,
                             help='number of epochs for adversarial training')
 
     parser.add_argument('--adv-train-batch-size',
@@ -191,6 +231,11 @@ def add_training_args(parser):
                             type=str,
                             default='standard',
                             help='Loss function to use for adversarial training')
+
+    parser.add_argument('--advtrain-patience',
+                            type=int,
+                            default=10,
+                            help='number of epochs to wait before early stopping')
 
     parser.add_argument('--temperature',
                             type=int,
