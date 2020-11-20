@@ -27,6 +27,12 @@ class GANInstructor():
         self.gen_opt = optim.Adam(self.gen.parameters(), lr=args.gen_lr)
         self.disc_opt = optim.Adam(self.disc.parameters(), lr=args.disc_lr)
 
+
+        #Schedulers ReduceLROnPlateau
+        self.pretrain_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(pretrain_opt, patience=args.pretrain_lr_patience, verbose=True)
+        self.gen_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(gen_opt, patience=args.gen_lr_patience, verbose=True)
+        self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(disc_opt, patience=args.disc_lr_patience, verbose=True)
+        
         self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, num_workers=args.num_workers, collate_fn=train_dataset.collate_fn)
         self.pre_eval_loader = DataLoader(dev_dataset, shuffle=False, batch_size=args.pre_eval_batch_size, num_workers=args.num_workers, collate_fn=dev_dataset.collate_fn)
 
@@ -111,6 +117,9 @@ class GANInstructor():
             gen_loss, ref, gen = self.genpretrain_loop('val')
             val_epoch_loss = np.mean(gen_loss)
 
+
+            self.pretrain_scheduler.step(val_epoch_loss)
+
             val_bleu = nltk.translate.bleu_score.corpus_bleu(ref,gen,weights = weights,smoothing_function=SmoothingFunction().method1) #Default 4 gram -> BLEU-4
 
             if epoch%self.args.pre_log_step == 0:
@@ -118,6 +127,7 @@ class GANInstructor():
                 val_perplexity = np.exp(val_epoch_loss)
                 self.log.info("Epoch {}: \n \t Train Loss: {} \n\t Val Loss: {} \n\t Train PP: {} \n\t Val PP: {} \n\t Train BLEU: {} \n\t Val BLEU: {} " \
                                 .format(epoch,train_epoch_loss,val_epoch_loss, train_perplexity, val_perplexity,train_bleu, val_bleu))
+
 
             if best_loss is None or val_epoch_loss < best_loss :
                 best_loss = val_epoch_loss
@@ -240,6 +250,9 @@ class GANInstructor():
                 train_perplexity = np.exp(train_g_loss)
                 self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f \n\t Train PP: %.4f \n\t Val PP: %.4f \n\t Train BLEU: %.4f \n\t Val BLEU: %.4f' %\
                               (adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss, train_perplexity, val_perplexity, train_bleu, val_bleu))
+
+            gen_scheduler.step(val_g_loss)
+            disc_scheduler.step(val_d_loss)
 
             if best_loss is None or val_g_loss < best_loss :
                 best_loss = val_g_loss 

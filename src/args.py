@@ -173,10 +173,17 @@ def add_training_args(parser):
                             default=32,
                             help='number of batches to train at each step of pretrain evaluation')
 
+
+    parser.add_argument('--pretrain-lr-patience',
+                            type=int,
+                            default=10,
+                            help='patience for pretrain LROnPlateau scheduler')
+
     parser.add_argument('--pretrain-patience',
                             type=int,
                             default=10,
                             help='number of epochs to wait before early stopping')
+
 
     #################### Adversarial Training ###################
 
@@ -184,11 +191,21 @@ def add_training_args(parser):
                             type=float,
                             default=1e-4,
                             help='learning rate for adversarial training of generator')
+    
+    parser.add_argument('--gen-lr-patience',
+                            type=int,
+                            default=10,
+                            help='patience for generator LROnPlateau scheduler')
 
     parser.add_argument('--disc-lr',
                             type=float,
                             default=1e-4,
                             help='learning rate for adversarial training of generator')
+
+    parser.add_argument('--disc-lr-patience',
+                            type=int,
+                            default=10,
+                            help='patience for discriminator LROnPlateau scheduler')
 
     parser.add_argument('--disc-train-freq',
                             type=int,
@@ -234,7 +251,6 @@ def add_training_args(parser):
                             type=float,
                             default=5.0,
                             help='Gradient clipping threshold')
-
 
     #args = parser.parse_args()
         
