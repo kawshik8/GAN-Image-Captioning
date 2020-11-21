@@ -34,9 +34,9 @@ class GANInstructor():
         self.tokenizer = train_dataset.tokenizer
 
         #Schedulers ReduceLROnPlateau
-        self.pretrain_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(pretrain_opt, patience=args.pretrain_lr_patience, verbose=True)
-        self.gen_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(gen_opt, patience=args.gen_lr_patience, verbose=True)
-        self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(disc_opt, patience=args.disc_lr_patience, verbose=True)
+        self.pretrain_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.pretrain_opt, patience=args.pretrain_lr_patience, verbose=True)
+        self.gen_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.gen_opt, patience=args.gen_lr_patience, verbose=True)
+        self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.disc_opt, patience=args.disc_lr_patience, verbose=True)
         
         self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, num_workers=args.num_workers, collate_fn=train_dataset.collate_fn)
         self.pre_eval_loader = DataLoader(dev_dataset, shuffle=False, batch_size=args.pre_eval_batch_size, num_workers=args.num_workers, collate_fn=dev_dataset.collate_fn)
