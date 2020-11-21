@@ -314,6 +314,11 @@ def get_args():
                             default="log",
                             help='Log file to save logs')
 
+    parser.add_argument('--sent-log-file',
+                            type=str,
+                            default="sent_log",
+                            help='Log file to save logs')
+
 
     args = parser.parse_args()
 
@@ -329,7 +334,8 @@ def get_args():
     os.mkdir(args.save_dir)
     args.model_dir = os.path.join(args.save_dir, args.model_dir)
     os.mkdir(args.model_dir)
-    args.log_file = os.path.join(args.save_dir, args.log_file)    
+    args.log_file = os.path.join(args.save_dir, args.log_file) 
+    args.sent_log_file = os.path.join(args.save_dir, args.sent_log_file)   
 
     if args.device == 'cuda' and torch.cuda.is_available():
         args.device = torch.device("cuda:0")#{args.device_ids}")

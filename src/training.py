@@ -22,11 +22,16 @@ class GANInstructor():
         self.disc = Discriminator(args).to(args.device)
         self.log = create_logger(__name__, silent=False, to_disk=True,
                                  log_file=args.log_file + ".txt")
+
+        self.sent_log = create_logger(__name__, silent=False, to_disk=True,
+                                 log_file=args.sent_log_file + ".txt")
+
         # Optimizer
         self.pretrain_opt = optim.Adam(self.gen.parameters(), lr=args.pretrain_lr)
         self.gen_opt = optim.Adam(self.gen.parameters(), lr=args.gen_lr)
         self.disc_opt = optim.Adam(self.disc.parameters(), lr=args.disc_lr)
 
+        self.tokenizer = train_dataset.tokenizer
 
         #Schedulers ReduceLROnPlateau
         self.pretrain_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(pretrain_opt, patience=args.pretrain_lr_patience, verbose=True)
@@ -55,12 +60,16 @@ class GANInstructor():
         self.pretrain_patience = self.args.pretrain_patience
         self.advtrain_patience = self.args.advtrain_patience
 
+        self.num_log_sent = 25
+
     def genpretrain_loop(self, what):
 
         gen_loss = []
         criterion = nn.CrossEntropyLoss(ignore_index=1)
         all_references = []
         all_candidates = []
+        num_sent = 0
+
         with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total = (len(self.train_dataset) if what=='train' else len(self.dev_dataset))) as progress:
             for batch_idx, (images, captions, lengths, max_caption_len) in enumerate((self.pre_train_loader if what=='train' else self.pre_eval_loader)):
                 
@@ -79,6 +88,10 @@ class GANInstructor():
                     features = self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
                 gen_captions, gen_caption_ids = self.gen.decoder.sample(features, pretrain=True, max_caption_len=max_caption_len)
                 real_captions, gen_captions = real_captions.to(self.args.device), gen_captions.to(self.args.device)
+
+                if num_sent < self.num_log_sent:
+                    num_sent += 1
+                    self.sent_log.info("True Sentence : {} \n Pred Sentence : {} \n".format(tokenizer.decode(captions["input_ids"][0]), tokenizer.decode(gen_caption_ids[0])))
 
                 g_captions = self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
                 all_candidates += g_captions             
@@ -99,13 +112,15 @@ class GANInstructor():
 
     def pretrain_generator(self, epochs , weights=[0.25,0.25,0.25,0.25]):
         self.log.info("Pretraining Generator")
+        self.sent_log.info("Pretraining Generator")
         total_loss = 0
 
         best_loss = None
         patience = 0
+
         for epoch in range(self.args.pretrain_epochs):
 
-            
+            self.sent_log.info("\nEpoch {}:".format(epoch))
             self.gen.train()
             gen_loss, ref, gen = self.genpretrain_loop('train')
             train_epoch_loss = np.mean(gen_loss)       
@@ -151,6 +166,8 @@ class GANInstructor():
         float_epoch = 0.0
         all_references = []
         all_candidates = []
+        num_sent = 0
+
         with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total=(len(self.train_dataset) if what == 'train' else len(self.dev_dataset))) as progress:
             gen_loss = []
             disc_loss = []
@@ -175,6 +192,10 @@ class GANInstructor():
                 gen_captions, gen_caption_ids = self.gen.decoder.sample(features, max_caption_len=max_caption_len)
                 fake_captions = gen_captions.detach()
                 fake_captions = fake_captions.to(self.args.device)
+
+                if num_sent < self.num_log_sent:
+                    num_sent += 1
+                    self.sent_log.info("True Sentence : {} \n Pred Sentence : {} \n".format(tokenizer.decode(captions["input_ids"][0]), tokenizer.decode(gen_caption_ids[0])))
 
                 g_captions = self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
                 all_candidates += g_captions
@@ -228,12 +249,15 @@ class GANInstructor():
 
         # # ===ADVERSARIAL TRAINING===
         self.log.info('Starting Adversarial Training...')
+        self.sent_log.info('Starting Adversarial Training...')
         
         patience = 0
         best_loss = None
         for adv_epoch in range(self.args.adv_epochs):
 
             self.adv_epoch = adv_epoch
+
+            self.sent_log.info("\nEpoch : {}".format(adv_epoch))
             
             self.disc.train()
             self.gen.train()
@@ -260,7 +284,7 @@ class GANInstructor():
                             "discriminator":self.disc.state_dict()}, self.model_dir + "/adv_model.ckpt")
                 patience = 0
             elif patience >= self.advtrain_patience:
-                self.log.info("Early Stopping at Epoch {}".format(epoch))
+                self.log.info("Early Stopping at Epoch {}".format(adv_epoch))
                 break
             else:
                 patience += 1
