@@ -285,8 +285,8 @@ class GANInstructor():
                 self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f \n\t Train PP: %.4f \n\t Val PP: %.4f \n\t Train BLEU: %.4f \n\t Val BLEU: %.4f' %\
                               (adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss, train_perplexity, val_perplexity, train_bleu, val_bleu))
 
-            gen_scheduler.step(val_g_loss)
-            disc_scheduler.step(val_d_loss)
+            self.gen_scheduler.step(val_g_loss)
+            self.disc_scheduler.step(val_d_loss)
 
             if best_loss is None or val_g_loss < best_loss :
                 best_loss = val_g_loss 
