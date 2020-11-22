@@ -16,7 +16,7 @@
 #conda activate myenv
 #pip3 install tensorboardX
 
-######## pretrain ###########
+######## advtrain ###########
 python3 src/main.py --gen-embed-dim 32 --gen-hidden-dim 256 --gen-num-layers 1 --gen-model-type lstm --num-workers 8 --data-dir ../coco_data --save-dir save --pretrain-lr 1e-4 --pretrain-epochs 0 --gen-lr 1e-4 --disc-lr 1e-4 --adv-epochs 100 --dataset_percent 0.1 --expt-name adv_debug --captions-per-image 5 --pretrain-patience 25 --advtrain-patience 25
 
 ########3 pretrain - adv #########
