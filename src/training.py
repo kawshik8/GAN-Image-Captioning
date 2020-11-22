@@ -212,11 +212,18 @@ class GANInstructor():
                 # ===Train===
                 d_out_real = self.disc(real_captions)
                 d_out_fake = self.disc(fake_captions)
-                g_out = self.disc(gen_captions)
-                g_loss, d_loss = get_losses(d_out_real, d_out_fake, g_out, self.args.adv_loss_type)
+
+                d_loss_real = bce_loss(d_out_real, torch.ones_like(d_out_real))
+                d_loss_fake = bce_loss(d_out_fake, torch.zeros_like(d_out_fake))
+                d_loss = d_loss_real + d_loss_fake
 
                 if what == 'train':
                     self.optimize(self.disc_opt, d_loss, self.disc, True)
+
+                g_out = self.disc(gen_captions)
+                g_loss = bce_loss(g_out, torch.ones_like(g_out))
+
+                if what == 'train':
                     self.optimize(self.gen_opt, g_loss, self.gen)
 
                 self.writer.add_scalar('Discriminator_train_loss' if what=='train' else 'Discriminator_val_loss',d_loss,self.disc_steps)
