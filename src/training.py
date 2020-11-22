@@ -89,9 +89,11 @@ class GANInstructor():
                 gen_captions, gen_caption_ids = self.gen.decoder.sample(features, pretrain=True, max_caption_len=max_caption_len)
                 real_captions, gen_captions = real_captions.to(self.args.device), gen_captions.to(self.args.device)
 
-                if num_sent < self.num_log_sent:
-                    num_sent += 1
-                    self.sent_log.info("True Sentence : {} \n Pred Sentence : {} \n".format(tokenizer.decode(captions["input_ids"][0]), tokenizer.decode(gen_caption_ids[0])))
+               # if num_sent < self.num_log_sent:
+               #     num_sent += 1
+               #     print(captions["input_ids"][0])
+               #     print(gen_caption_ids[0])
+               #     self.sent_log.info("True Sentence : {} \n Pred Sentence : {} \n".format(self.tokenizer.decode(captions["input_ids"][0]), self.tokenizer.decode(gen_caption_ids[0])))
 
                 g_captions = self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
                 all_candidates += g_captions             
@@ -107,6 +109,9 @@ class GANInstructor():
                 progress.update(len(images))
                 progress.set_postfix(loss=loss.item())        
         
+        for i in range(10):
+            self.sent_log.info("True Sentence : {} \n Pred Sentence : {} \n".format(all_references[i],all_candidates[i]))
+
         # print(all_references[-10:], all_candidates[-10:])
         return (gen_loss , all_references, all_candidates)
 
@@ -193,9 +198,11 @@ class GANInstructor():
                 fake_captions = gen_captions.detach()
                 fake_captions = fake_captions.to(self.args.device)
 
-                if num_sent < self.num_log_sent:
-                    num_sent += 1
-                    self.sent_log.info("True Sentence : {} \n Pred Sentence : {} \n".format(tokenizer.decode(captions["input_ids"][0]), tokenizer.decode(gen_caption_ids[0])))
+                #if num_sent < self.num_log_sent:
+                #    num_sent += 1
+                #    print(captions["input_ids"][0])
+                #    print(gen_caption_ids[0])
+                #    self.sent_log.info("True Sentence : {} \n Pred Sentence : {} \n".format(self.tokenizer.decode(captions["input_ids"][0]), self.tokenizer.decode(gen_caption_ids[0])))
 
                 g_captions = self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
                 all_candidates += g_captions
@@ -228,6 +235,9 @@ class GANInstructor():
 
         total_gen_loss = np.mean(gen_loss)
         total_disc_loss = np.mean(disc_loss)
+
+        for i in range(10):
+            self.sent_log.info("True Sentence : {} \n Pred Sentence : {} \n".format(all_references[i],all_candidates[i]))
 
         return (total_gen_loss, total_disc_loss, all_references, all_candidates)
 
