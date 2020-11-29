@@ -42,8 +42,8 @@ class GANInstructor():
             self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.disc_opt, patience=args.disc_lr_patience, verbose=True)
         else:
 
-            self.pretrain_scheduler = torch.optim.lr_scheduler.OneCycleLR(self.pretrain_opt, max_lr=1e-2, total_steps = args.pretrain_epochs*((len(train_dataset)//args.pre_train_batch_size)+1), final_div_factor = 4, pct_start=5/args.pretrain_epochs, anneal_strategy='cos')
-            self.gen_scheduler = torch.optim.lr_scheduler.OneCycleLR(self.gen_opt, max_lr=1e-3, total_steps = args.adv_epochs*((len(train_dataset)//args.adv_train_batch_size)+1), pct_start=5/args.pretrain_epochs, final_div_factor = 4, anneal_strategy='cos')
+            self.pretrain_scheduler = torch.optim.lr_scheduler.OneCycleLR(self.pretrain_opt, max_lr=5e-4, total_steps = args.pretrain_epochs*((len(train_dataset)//args.pre_train_batch_size)+1), final_div_factor = 10, div_factor=25, pct_start=4/args.pretrain_epochs, anneal_strategy='cos')
+            self.gen_scheduler = torch.optim.lr_scheduler.OneCycleLR(self.gen_opt, max_lr=5e-4, total_steps = args.adv_epochs*((len(train_dataset)//args.adv_train_batch_size)+1), pct_start=5/args.pretrain_epochs, final_div_factor = 10, div_factor = 25, anneal_strategy='cos')
             self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.disc_opt, patience=args.disc_lr_patience, verbose=True)
         
         self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, num_workers=args.num_workers, collate_fn=train_dataset.collate_fn)
@@ -143,7 +143,7 @@ class GANInstructor():
                         self.pretrain_opt.step()
                         if self.args.gen_model_type == 'transformer':
                             self.pretrain_scheduler.step()
-                            print(self.pretrain_opt.param_groups[0]['lr'])
+                            # print(self.pretrain_opt.param_groups[0]['lr'])
                     # if what == 'train':
                     #     self.optimize(self.pretrain_opt, loss, self.gen)
 
