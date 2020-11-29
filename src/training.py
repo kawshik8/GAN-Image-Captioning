@@ -246,7 +246,7 @@ class GANInstructor():
                 else:
                     features = self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
        
-                if torch.rand(1) < self.teacher_force_choice_pre:
+                if torch.rand(1) < self.teacher_force_choice_adv:
                     gen_captions, gen_caption_ids = self.gen.decoder(features, captions, lengths, attn_mask=attn_mask, max_caption_len = max_caption_len)
                 else:
                     gen_captions, gen_caption_ids = self.gen.decoder.sample(features, max_caption_len = max_caption_len)
