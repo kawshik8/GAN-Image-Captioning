@@ -5,6 +5,9 @@ import torchvision.models as models
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from transformer import *
+from torch.autograd import Variable
+import numpy as np
+
 
 def get_resnet_model(model_type):
     if model_type == 'resnet50':
@@ -57,16 +60,24 @@ class Decoder(nn.Module):
     def __init__(self, args):
         """Set the hyper-parameters and build the layers."""
         super(Decoder, self).__init__()
-        self.embed = nn.Embedding(args.vocab_size, args.gen_embed_dim)
+        self.embed = nn.Embedding(args.vocab_size, args.gen_embed_dim, padding_idx=1)
+
         if args.gen_model_type == 'lstm':
             self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True)
-        elif args.gen_model_type == 'transformer' and args.conditional_gan:
-            decoder_layer = TransformerDecoderLayer(args.gen_embed_dim, args.gen_nheads, args.gen_hidden_dim)
-            self.transformer = TransformerDecoder(decoder_layer, args.gen_num_layers)
-        elif args.gen_model_type == 'transformer' and not args.conditional_gan:
-            encoder_layer = TransformerEncoderLayer(args.gen_embed_dim, args.gen_nheads, args.gen_hidden_dim)
-            self.transformer = TransformerEncoder(encoder_layer, args.gen_num_layers)
-        
+
+
+        elif args.gen_model_type == 'transformer':# and args.conditional_gan:
+            if args.conditional_gan:
+                decoder_layer = TransformerDecoderLayer(args.gen_embed_dim, args.gen_nheads, args.gen_hidden_dim)
+                self.transformer = TransformerDecoder(decoder_layer, args.gen_num_layers)
+
+
+            else:#if d not args.conditional_gan:
+                encoder_layer = TransformerEncoderLayer(args.gen_embed_dim, args.gen_nheads, args.gen_hidden_dim)
+                self.transformer = TransformerEncoder(encoder_layer, args.gen_num_layers)
+            self.pos_embed = nn.Embedding(100, args.gen_embed_dim)
+
+
         if args.gen_model_type == 'lstm':
             self.linear = nn.Linear(args.gen_hidden_dim, args.vocab_size)
         else:
@@ -76,21 +87,71 @@ class Decoder(nn.Module):
         self.args = args
         #self.device = args.device
         
-    def forward(self, features, caps, lengths, pretrain=False):
+    def forward(self, image_features, caps, lengths, pretrain=False, attn_mask = None, max_caption_len=34):
         """Decode image feature vectors and generates captions."""
-        embeddings = self.embed(caps)
-        embeddings = torch.cat((features.unsqueeze(1), embeddings), 1)  #First timestep input to lstm is features from image. Appending to captions
-        packed = pack_padded_sequence(embeddings, lengths, batch_first=True, enforce_sorted=False) 
-        packed_output, hidden = self.lstm(packed)
-        output, input_sizes = pad_packed_sequence(packed_output, batch_first=True) #Unpack sequence
+        # print(lengths)  
+        embeddings = self.embed(caps) #[0,.....,2,1,1,1]
 
+        if self.args.conditional_gan:
+            # embeddings = torch.cat((image_features.unsqueeze(1), embeddings), 1)  #First timestep input to lstm is features from image. Appending to captions
+            if self.args.gen_model_type == 'transformer':
+                inputs = embeddings
+
+                if args.gen_model_output == 'pool':
+                    image_features = image_features.unsqueeze(1) 
+                else:
+                    image_features = image_features.view(image_features.size(0),-1,image_features.size(1))
+
+            else:
+                inputs = torch.cat((image_features.unsqueeze(1), embeddings), 1) 
+
+
+        else:
+             inputs = embeddings
+             lengths-=1
+
+        # print("Inputs: ", inputs.shape)
+
+        if self.args.gen_model_type == 'lstm':
+            # output, hidden = self.lstm(inputs) 
+            # output = output[:,:-1]
+            # print(output.shape)
+            packed = pack_padded_sequence(inputs, lengths, batch_first=True)
+            # print("PACKED: ",packed.data.shape)
+            packed_output, hidden = self.lstm(packed, )
+            # print("PACKED_OUTPUT:", packed_output.data.shape)
+            output, input_sizes = pad_packed_sequence(packed_output, batch_first=True) #Unpack sequence
+            # print("OUTPUT: ", output.shape, input_sizes)
+
+        else:
+            attn_mask = (1.0 - attn_mask).type(torch.bool)
+            
+            no_peek_mask = np.triu(np.ones((max_caption_len, max_caption_len)), k=1)  
+            no_peek_mask = Variable(torch.from_numpy(no_peek_mask) == 1).type(torch.bool).to(self.args.device)
+            #TODO 
+            # attn_mask = attn_mask & no_peek_mask
+            # print(inputs.shape)
+            if self.args.conditional_gan:
+                output = self.transformer(inputs.transpose(0,1), tgt_mask = no_peek_mask, tgt_key_padding_mask=attn_mask).transpose(0,1)
+            else:
+                positions = self.pos_embed(torch.arange(inputs.size(1)).long().unsqueeze(0).repeat(inputs.size(0),1).to(self.args.device)).transpose(0,1)
+                # print(positions.shape)
+                output = self.transformer(inputs.transpose(0,1), pos=positions, mask = no_peek_mask, src_key_padding_mask=attn_mask).transpose(0,1)
+                output =output[:,:-1]
+
+        # print(output.shape)
         if pretrain:
             pred = self.linear(output)
         else:
             gumbel_t = self.add_gumbel(self.linear(output))
-            pred = F.softmax(gumbel_t * self.temperature, dim=-1) 
+            pred = F.softmax(gumbel_t * self.temperature, dim=-1)
 
-        return pred, hidden
+        # print("PRED: " ,pred)
+
+        pred_index = pred.max(-1)[1]
+        # print("PRED_INDEX", pred_index)
+        # print(pred_index.shape) 
+        return pred, pred_index
     
     def sample(self, features, states=None, pretrain=False, max_caption_len=34):
         """Generate captions for given image features using greedy search."""
@@ -133,8 +194,7 @@ class Decoder(nn.Module):
             if pretrain:
                 pred = self.linear(hiddens)
                 outputs.append(pred[:,-1])
-                pred = F.softmax(pred, dim=-1)
-                # print(pred.shape)
+   
             else:
                 gumbel_t = self.add_gumbel(self.linear(hiddens))            # outputs:  (batch_size, vocab_size)
                 pred = F.softmax(gumbel_t * self.temperature, dim=-1)  
@@ -158,7 +218,8 @@ class Decoder(nn.Module):
         sampled_ids = torch.stack(sampled_ids, 1)                # sampled_ids: (batch_size, max_seq_length)
 #         print(len(outputs),outputs[0].shape)
         outputs = torch.stack(outputs, 1)
-#         print(outputs.shape)
+        print(outputs.shape)
+        print(sampled_ids.shape)
         return outputs, sampled_ids
     
     #@staticmethod
@@ -185,15 +246,15 @@ class Generator(nn.Module):
             self.encoder = Encoder(args)
         self.decoder = Decoder(args)
         self.args = args
-        self.init_params()
+        # self.init_params()
         
     def forward(self, images, caps, lengths, pretrain=False):
         """Extract feature vectors from input images."""
         if self.args.cgan:
             features = self.encoder(images)
-            features = [features,self.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))]
+            # features = [features,self.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))]
         else:
-            features = self.decoder.embed(torch.ones(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
+            features = None
         pred, hidden = self.decoder(features, caps, lengths, pretrain)
 
         # print(pred.shape, hidden.shape)
@@ -220,16 +281,16 @@ if __name__=='__main__':
     sample_lengths = (torch.ones(b, dtype=torch.long)*34).to(args.device)
 
     if args.conditional_gan:
-        features = [generator.encoder(sample_images),generator.decoder.embed(torch.ones(b,1, dtype=torch.long).squeeze(1).to(args.device))]
+        features = generator.encoder(sample_images)
         print("image features: ",generator.encoder(sample_images).shape)
     else:
-        features = generator.decoder.embed(torch.ones(b,1, dtype=torch.long).squeeze(1).to(args.device))
-        print("start token features: ",features.shape)
+        features = None
+        
 
-    
-    pretrain_pred,_ = generator.decoder.sample(features, pretrain=True)
+    pred, pred_index = generator.decoder(features, sample_captions, sample_lengths, attn_mask=None, max_caption_len = 34)
+    # pretrain_pred,_ = generator.decoder.sample(features, pretrain=True)
 
-    adv_pred,_ = generator.decoder.sample(features)
+    # adv_pred,_ = generator.decoder.sample(features)
 
-    print(pretrain_pred.shape, adv_pred.shape)
+    print(pred.shape, pred_index.shape)
 

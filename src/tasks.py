@@ -120,11 +120,7 @@ class COCO_data(Dataset):
         image = Image.open(image_path)
         image = self.transforms(image)
 
-        caption = random.choice(caption_dict['sentences'])['tokens']
-
-#         self.caption_indices_dict[captions['imgid']] += 1
-        #print(index)
-#         print(index,image_path,caption)
+        caption = caption_dict['sentences'][0]['tokens']
 
         return image, caption, torch.ones(1)*34        
            
@@ -139,6 +135,7 @@ class COCO_data(Dataset):
 
         images = torch.zeros(len(batch),3,image_size,image_size)
         captions = []
+        lengths = []
         for i in range(len(batch)):
             captions.append(batch[i][1])
             images[i] = batch[i][0]
@@ -153,33 +150,32 @@ class COCO_data(Dataset):
                 is_split_into_words=True,
                 return_attention_mask=True,
                 return_token_type_ids=False,
-                return_tensors='pt'
+                return_tensors='pt',
+                return_length = True
             )
         
-
-        captions['input_ids'] = captions['input_ids'].squeeze().type(torch.LongTensor)
         captions['attention_mask'] = captions['attention_mask'].squeeze().type(torch.LongTensor)
-                    
-        # captions = torch.zeros(len(batch), max_caption_len).type(torch.long)
-        lengths = torch.zeros(len(batch)).type(torch.int) + max_caption_len
-        
-        #for i in range(len(batch)):
-        #    curr_len = len(batch[i][1])
-            # captions[i] = torch.LongTensor([1] + batch[i][1] + [2] + [0]*(max_caption_len - curr_len - 2))
-    #    print(captions["input_ids"].shape,images.shape)            
+        captions['input_ids'] = captions['input_ids'].squeeze().type(torch.LongTensor)      
+        captions['length'] = captions['length'].squeeze().type(torch.LongTensor)
 
-        return images, captions, lengths, captions["input_ids"].shape[1]
+        captions['length'], indices = torch.sort(captions['length'], dim=0, descending=True)
+        captions['input_ids'] = captions['input_ids'][indices]
+        captions['attention_mask'] = captions['attention_mask'][indices]
 
-    def convert_to_tokens_references(self,captions):
+        images = images[indices]          
+
+        return images, captions, captions['length'], captions["input_ids"].shape[1]
+
+    def convert_to_tokens_references(self,captions, skip_special_tokens = True):
         batch_captions = []
         for cap in captions:     
-            batch_captions.append([self.tokenizer.convert_ids_to_tokens(cap, skip_special_tokens = True)])
+            batch_captions.append([self.tokenizer.convert_ids_to_tokens(cap, skip_special_tokens = skip_special_tokens)])
         return batch_captions
 
-    def convert_to_tokens_candidates(self,captions):
+    def convert_to_tokens_candidates(self,captions, skip_special_tokens = True):
         batch_captions = []
         for cap in captions:    
-            batch_captions.append(self.tokenizer.convert_ids_to_tokens(cap, skip_special_tokens = True))
+            batch_captions.append(self.tokenizer.convert_ids_to_tokens(cap, skip_special_tokens = skip_special_tokens))
         return batch_captions
 
 
@@ -187,6 +183,14 @@ if __name__ == '__main__':
      
     dataset = COCO_data("../coco_data/dataset_coco.json","../coco_data",'train',captions_per_image=1)
     loader = DataLoader(dataset, batch_size=16, shuffle=False, collate_fn=dataset.collate_fn, num_workers=4)
+    for i,instance in enumerate(loader):
+        image,caption,lengths, max_len = instance
+        # print("Input IDS: ", caption['input_ids'])
+        # print("Attention mask: ", caption['attention_mask'])
+        # print("Lengths: ", lengths, lengths.shape)
+        # print("Image: ", image.shape)
+        # print("Max_len", max_len)
+
 
     # print(dataset.word_to_index)
 #     with tqdm(total=len(dataset)) as progress_bar:

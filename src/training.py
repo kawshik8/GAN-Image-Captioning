@@ -13,6 +13,8 @@ from tasks import *
 from metrics.perplexity import calc_pp
 import nltk
 from nltk.translate.bleu_score import SmoothingFunction
+import sys
+sys.stdout.flush()
 
 class GANInstructor():
     def __init__(self, args, train_dataset, dev_dataset):
@@ -70,47 +72,82 @@ class GANInstructor():
         all_candidates = []
         num_sent = 0
 
-        with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total = (len(self.train_dataset) if what=='train' else len(self.dev_dataset))) as progress:
-            for batch_idx, (images, captions, lengths, max_caption_len) in enumerate((self.pre_train_loader if what=='train' else self.pre_eval_loader)):
-                
-                r_captions = self.train_dataset.convert_to_tokens_references(captions['input_ids'])
-                all_references += r_captions
+        with open('./sentences.txt', 'w') as f:
 
-                images = images.to(self.args.device) 
-                lengths = lengths.to(self.args.device)
-                attn_mask = captions["attention_mask"].to(self.args.device)
-                captions = captions["input_ids"].to(self.args.device)
-                real_captions = captions        
-                
-                if self.cgan:
-                    features = [self.gen.encoder(images),self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))]
-                else:
-                    features = self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
-                gen_captions, gen_caption_ids = self.gen.decoder.sample(features, pretrain=True, max_caption_len=max_caption_len)
-                real_captions, gen_captions = real_captions.to(self.args.device), gen_captions.to(self.args.device)
+            with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total = (len(self.train_dataset) if what=='train' else len(self.dev_dataset))) as progress:
+                for batch_idx, (images, captions, lengths, max_caption_len) in enumerate((self.pre_train_loader if what=='train' else self.pre_eval_loader)):
+                    
+                    self.pretrain_opt.zero_grad()
+                    r_captions = self.train_dataset.convert_to_tokens_references(captions['input_ids'])
 
-               # if num_sent < self.num_log_sent:
-               #     num_sent += 1
-               #     print(captions["input_ids"][0])
-               #     print(gen_caption_ids[0])
-               #     self.sent_log.info("True Sentence : {} \n Pred Sentence : {} \n".format(self.tokenizer.decode(captions["input_ids"][0]), self.tokenizer.decode(gen_caption_ids[0])))
+                    all_references += r_captions
 
-                g_captions = self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
-                all_candidates += g_captions             
-    
-                loss = criterion(gen_captions.view(-1,gen_captions.size(-1)), real_captions.view(-1))
 
-                if what == 'train':
-                    self.optimize(self.pretrain_opt, loss, self.gen)
+                    images = images.to(self.args.device) 
+                    lengths = lengths.cpu()
 
-                gen_loss.append(loss.item())
+                    attn_mask = captions["attention_mask"].to(self.args.device)
+                    #s = torch.randint(10,(1,))
+                    captions = captions["input_ids"].to(self.args.device)
+                    real_captions = captions        
+                    
+                    if self.cgan:
+                        features = self.gen.encoder(images)
+                    else:
+                        features = None
 
-                self.writer.add_scalar('GenPreTraining_train_loss' if what=='train' else 'GenPreTraining_val_loss',loss,self.pretrain_steps)         
-                progress.update(len(images))
-                progress.set_postfix(loss=loss.item())        
+
+                    gen_captions, gen_caption_ids = self.gen.decoder(features, captions, lengths, pretrain = True, attn_mask=attn_mask, max_caption_len = max_caption_len)
+                    
+                    real_captions, gen_captions = real_captions.to(self.args.device), gen_captions.to(self.args.device)
+
+                    g_captions = self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
+                    all_candidates += g_captions             
+        
+                    if not self.args.conditional_gan:
+                       real_captions = real_captions[:,1:]
+
+                    f.write('\nReal Caption: {}'.format(self.train_dataset.convert_to_tokens_references(captions,skip_special_tokens = False)))
+                    f.write('\nGenerated Caption: {}'.format(self.train_dataset.convert_to_tokens_candidates(gen_caption_ids,skip_special_tokens = False)))
+                    #print(real_captions)
+                    #print(gen_captions.max(dim=-1)[1])
+                    # print(criterion(gen_captions.reshape(-1,gen_captions.size(-1)), real_captions.reshape(-1)).shape)
+
+                    #losses = []
+                    #accs = []
+                    #for i in range(len(images)):
+                    #    print(criterion(gen_captions[i], real_captions[i]))
+                    #    losses.append(criterion(gen_captions[i], real_captions[i]))
+                    #    accs.append(torch.equal(gen_captions[i].max(dim=-1)[1], real_captions[i]))
+                    #    print(gen_captions[i].max(dim=-1)[1], real_captions[i])
+
+                    #loss = torch.stack(losses).mean()
+                    #print(accs)
+
+                    loss = criterion(gen_captions.reshape(-1,gen_captions.size(-1)), real_captions.reshape(-1))
+                    gen_loss.append(loss.item())
+
+                    if what=='train':
+                        loss.backward()
+                        self.pretrain_opt.step()
+                    # if what == 'train':
+                    #     self.optimize(self.pretrain_opt, loss, self.gen)
+
+                    # total_norm = 0.0
+                    # for p in self.gen.parameters():   
+                    #     # print(p) 
+                    #     param_norm = p.grad.data.norm(2)
+                    #     total_norm += param_norm.item() ** 2
+                    # total_norm = total_norm ** (1. / 2)
+                    # print(total_norm)
+
+                    self.writer.add_scalar('GenPreTraining_train_loss' if what=='train' else 'GenPreTraining_val_loss',loss,self.pretrain_steps)         
+                    progress.update(len(images))
+                    progress.set_postfix(loss=loss.item())#,norm=total_norm)        
         
         for i in range(10):
-            self.sent_log.info("True Sentence : {} \n Pred Sentence : {} \n".format(all_references[i],all_candidates[i]))
+            
+            self.sent_log.info("True Sentence : {} \nPred Sentence : {} \n".format(all_references[i],all_candidates[i]))
 
         # print(all_references[-10:], all_candidates[-10:])
         return (gen_loss , all_references, all_candidates)
@@ -173,6 +210,7 @@ class GANInstructor():
         all_candidates = []
         num_sent = 0
 
+        bce_loss = nn.BCEWithLogitsLoss()
         with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total=(len(self.train_dataset) if what == 'train' else len(self.dev_dataset))) as progress:
             gen_loss = []
             disc_loss = []
@@ -183,7 +221,7 @@ class GANInstructor():
                 r_captions = self.train_dataset.convert_to_tokens_references(captions['input_ids'])
                 all_references += r_captions
 
-                images,lengths = images.to(self.args.device), lengths.to(self.args.device)
+                images,lengths = images.to(self.args.device), lengths.cpu()
                 attn_mask = captions["attention_mask"].to(self.args.device)
                 captions = captions["input_ids"].to(self.args.device)
 
@@ -194,7 +232,7 @@ class GANInstructor():
                 else:
                     features = self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
        
-                gen_captions, gen_caption_ids = self.gen.decoder.sample(features, max_caption_len=max_caption_len)
+                gen_captions, gen_caption_ids = self.gen.decoder(features, captions, lengths)
                 fake_captions = gen_captions.detach()
                 fake_captions = fake_captions.to(self.args.device)
 
@@ -253,10 +291,10 @@ class GANInstructor():
 
     #@staticmethod
     def optimize(self, opt, loss, model=None, retain_graph=False):
-        opt.zero_grad()
+        
         loss.backward(retain_graph=retain_graph)
-        if model is not None:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.clip_norm)
+        # if model is not None:
+        #     torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.clip_norm)
         opt.step()
 
     def _run(self, weights=[0.25,0.25,0.25,0.25]):
