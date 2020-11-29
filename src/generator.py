@@ -31,7 +31,7 @@ class Encoder(nn.Module):
         modules = list(resnet.children())[:-2]      # delete the last fc layer and avg pool 2d.
         self.resnet = nn.Sequential(*modules) 
 
-        if args.gen_model_output == 'grid' and args.gen_model_type != 'lstm':
+        if args.gen_model_output == 'transformer':
             self.conv = nn.Conv2d(OUT_IMAGE_FEATURE_DIMENSION_DICT[args.resnet_type], args.gen_embed_dim, 3, 1)
             self.bn = nn.BatchNorm2d(args.gen_embed_dim, momentum=0.01)
         else:
@@ -47,7 +47,7 @@ class Encoder(nn.Module):
         with (torch.no_grad() if self.freeze_cnn else torch.enable_grad()):
             features = self.resnet(images)
 
-        if args.gen_model_output == 'grid' and args.gen_model_type != 'lstm':
+        if self.args.gen_model_output == 'transformer':
             features = self.bn(self.conv(features))
         else:
             features = self.pool(features)
@@ -97,10 +97,7 @@ class Decoder(nn.Module):
             if self.args.gen_model_type == 'transformer':
                 inputs = embeddings
 
-                if args.gen_model_output == 'pool':
-                    image_features = image_features.unsqueeze(1) 
-                else:
-                    image_features = image_features.view(image_features.size(0),-1,image_features.size(1))
+                image_features = image_features.view(image_features.size(0),-1,image_features.size(1))
 
             else:
                 inputs = torch.cat((image_features.unsqueeze(1), embeddings), 1) 
@@ -131,10 +128,11 @@ class Decoder(nn.Module):
             #TODO 
             # attn_mask = attn_mask & no_peek_mask
             # print(inputs.shape)
+            positions = self.pos_embed(torch.arange(inputs.size(1)).long().unsqueeze(0).repeat(inputs.size(0),1).to(self.args.device)).transpose(0,1)
+
             if self.args.conditional_gan:
-                output = self.transformer(inputs.transpose(0,1), tgt_mask = no_peek_mask, tgt_key_padding_mask=attn_mask).transpose(0,1)
+                output = self.transformer(inputs.transpose(0,1), memory = image_features, query_pos=positions, tgt_mask = no_peek_mask, tgt_key_padding_mask=attn_mask).transpose(0,1)
             else:
-                positions = self.pos_embed(torch.arange(inputs.size(1)).long().unsqueeze(0).repeat(inputs.size(0),1).to(self.args.device)).transpose(0,1)
                 # print(positions.shape)
                 output = self.transformer(inputs.transpose(0,1), pos=positions, mask = no_peek_mask, src_key_padding_mask=attn_mask).transpose(0,1)
                 output =output[:,:-1]
