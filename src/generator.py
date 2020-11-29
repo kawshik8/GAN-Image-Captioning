@@ -7,7 +7,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from transformer import *
 from torch.autograd import Variable
 import numpy as np
-
+from utils import init_weight
 
 def get_resnet_model(model_type):
     if model_type == 'resnet50':
@@ -246,7 +246,7 @@ class Generator(nn.Module):
             self.encoder = Encoder(args)
         self.decoder = Decoder(args)
         self.args = args
-        # self.init_params()
+        self.apply(init_weight)
         
     def forward(self, images, caps, lengths, pretrain=False):
         """Extract feature vectors from input images."""

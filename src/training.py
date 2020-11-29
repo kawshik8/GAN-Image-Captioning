@@ -36,9 +36,15 @@ class GANInstructor():
         self.tokenizer = train_dataset.tokenizer
 
         #Schedulers ReduceLROnPlateau
-        self.pretrain_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.pretrain_opt, patience=args.pretrain_lr_patience, verbose=True)
-        self.gen_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.gen_opt, patience=args.gen_lr_patience, verbose=True)
-        self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.disc_opt, patience=args.disc_lr_patience, verbose=True)
+        if args.gen_model_type == 'lstm':
+            self.pretrain_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.pretrain_opt, patience=args.pretrain_lr_patience, verbose=True)
+            self.gen_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.gen_opt, patience=args.gen_lr_patience, verbose=True)
+            self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.disc_opt, patience=args.disc_lr_patience, verbose=True)
+        else:
+
+            self.pretrain_scheduler = torch.optim.lr_scheduler.OneCycleLR(self.pretrain_opt, max_lr=1e-2, epochs=args.pretrain_epochs, steps_per_epoch=len(train_dataset), pct_start=5/args.pretrain_epochs, anneal_strategy='cos', verbose=True)
+            self.gen_scheduler = torch.optim.lr_scheduler.OneCycleLR(self.gen_opt, max_lr=1e-3, epochs=args.adv_epochs, steps_per_epoch=len(train_dataset), pct_start=5/args.pretrain_epochs, anneal_strategy='cos', verbose=True)
+            self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.disc_opt, patience=args.disc_lr_patience, verbose=True)
         
         self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, num_workers=args.num_workers, collate_fn=train_dataset.collate_fn)
         self.pre_eval_loader = DataLoader(dev_dataset, shuffle=False, batch_size=args.pre_eval_batch_size, num_workers=args.num_workers, collate_fn=dev_dataset.collate_fn)
@@ -63,6 +69,9 @@ class GANInstructor():
         self.advtrain_patience = self.args.advtrain_patience
 
         self.num_log_sent = 25
+
+        self.teacher_force_choice_pre = 0.5
+        self.teacher_force_choice_adv = 0.0
 
     def genpretrain_loop(self, what):
 
@@ -96,8 +105,10 @@ class GANInstructor():
                     else:
                         features = None
 
-
-                    gen_captions, gen_caption_ids = self.gen.decoder(features, captions, lengths, pretrain = True, attn_mask=attn_mask, max_caption_len = max_caption_len)
+                    if torch.rand(1) < self.teacher_force_choice_pre:
+                        gen_captions, gen_caption_ids = self.gen.decoder(features, captions, lengths, pretrain = True, attn_mask=attn_mask, max_caption_len = max_caption_len)
+                    else:
+                        gen_captions, gen_caption_ids = self.gen.decoder.sample(features, pretrain = True, max_caption_len = max_caption_len)
                     
                     real_captions, gen_captions = real_captions.to(self.args.device), gen_captions.to(self.args.device)
 
@@ -130,6 +141,8 @@ class GANInstructor():
                     if what=='train':
                         loss.backward()
                         self.pretrain_opt.step()
+                        if self.args.gen_model_type == 'transformer':
+                            self.gen_scheduler.step()
                     # if what == 'train':
                     #     self.optimize(self.pretrain_opt, loss, self.gen)
 
@@ -174,8 +187,8 @@ class GANInstructor():
             gen_loss, ref, gen = self.genpretrain_loop('val')
             val_epoch_loss = np.mean(gen_loss)
 
-
-            self.pretrain_scheduler.step(val_epoch_loss)
+            if self.args.gen_model_type == 'lstm':
+                self.pretrain_scheduler.step(val_epoch_loss)
 
             val_bleu = nltk.translate.bleu_score.corpus_bleu(ref,gen,weights = weights,smoothing_function=SmoothingFunction().method1) #Default 4 gram -> BLEU-4
 
@@ -232,7 +245,12 @@ class GANInstructor():
                 else:
                     features = self.gen.decoder.embed(torch.zeros(len(images),1, dtype=torch.long).squeeze(1).to(self.args.device))
        
-                gen_captions, gen_caption_ids = self.gen.decoder(features, captions, lengths)
+                if torch.rand(1) < self.teacher_force_choice_pre:
+                    gen_captions, gen_caption_ids = self.gen.decoder(features, captions, lengths, attn_mask=attn_mask, max_caption_len = max_caption_len)
+                else:
+                    gen_captions, gen_caption_ids = self.gen.decoder.sample(features, max_caption_len = max_caption_len)
+
+
                 fake_captions = gen_captions.detach()
                 fake_captions = fake_captions.to(self.args.device)
 
@@ -263,6 +281,9 @@ class GANInstructor():
 
                 if what == 'train':
                     self.optimize(self.gen_opt, g_loss, self.gen)
+                    if self.args.gen_model_type == 'transformer':
+                        self.gen_scheduler.step()
+
 
                 self.writer.add_scalar('Discriminator_train_loss' if what=='train' else 'Discriminator_val_loss',d_loss,self.disc_steps)
                 self.disc_steps+=1
@@ -330,7 +351,8 @@ class GANInstructor():
                 self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f \n\t Train PP: %.4f \n\t Val PP: %.4f \n\t Train BLEU: %.4f \n\t Val BLEU: %.4f' %\
                               (adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss, train_perplexity, val_perplexity, train_bleu, val_bleu))
 
-            self.gen_scheduler.step(val_g_loss)
+            if self.args.gen_model_type == 'lstm':
+                self.gen_scheduler.step(val_g_loss)
             self.disc_scheduler.step(val_d_loss)
 
             if best_loss is None or val_g_loss < best_loss :

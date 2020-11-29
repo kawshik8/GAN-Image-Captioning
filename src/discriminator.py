@@ -4,7 +4,7 @@ import torch.nn as nn
 import torchvision.models as models
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-
+from utils import init_weight
 
 class Discriminator(nn.Module):
     def __init__(self, args, gpu=False,dropout=0.2):
@@ -29,7 +29,7 @@ class Discriminator(nn.Module):
         self.out2logits = nn.Linear(100, 1)
         self.dropout = nn.Dropout(dropout)
         self.args = args
-        self.init_params()
+        self.apply(init_weight)
 
     def forward(self, inp):
         """
