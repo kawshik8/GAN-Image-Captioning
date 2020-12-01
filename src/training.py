@@ -191,7 +191,6 @@ class GANInstructor():
     
     def mle_iteration(self, real_captions, generated_captions):
         criterion = nn.CrossEntropyLoss(ignore_index=1)
-        print(real_captions.shape, generated_captions.shape)
         loss = criterion(generated_captions.reshape(-1,generated_captions.size(-1)), real_captions.reshape(-1))
         return loss
 
@@ -213,7 +212,6 @@ class GANInstructor():
     def discriminator_train_iteration(self,real_captions, fake_captions,attn_mask, what):
         bce_loss = nn.BCEWithLogitsLoss(reduction='mean')
         real_captions = F.one_hot(real_captions, self.args.vocab_size).float()
-        print(real_captions.shape, fake_captions.shape)
         # print(attn_mask.shape)
         d_out_real = self.disc(real_captions)
         d_out_fake = self.disc(fake_captions)
@@ -273,11 +271,11 @@ class GANInstructor():
    
                 gen_captions, gen_caption_ids = self.gen.decoder.sample(images.size(0), features, states=None,pretrain=False, max_caption_len=max_caption_len)
                 fake_captions = gen_captions.detach()   
-                print(real_captions.shape, gen_captions.shape)
+                
                 if not self.cgan:              
                     real_captions = real_captions[:,1:]   # Remove start token   
                     fake_captions = fake_captions[:,:-1]   #Remove token generated for stop token (we generate sentence upto max length in sampling)
-                    print(gen_captions.shape)
+                   
                 real_captions, gen_captions = real_captions.to(self.args.device), fake_captions.to(self.args.device)
 
                 loss = self.mle_iteration(real_captions, gen_captions.clone())
