@@ -120,7 +120,7 @@ class COCO_data(Dataset):
         image = Image.open(image_path)
         image = self.transforms(image)
 
-        caption = caption_dict['sentences'][0]['tokens']
+        caption = random.choice(caption_dict['sentences'])['tokens']
 
         return image, caption, torch.ones(1)*34        
            
@@ -128,9 +128,7 @@ class COCO_data(Dataset):
         
         image_size = batch[0][0].shape[-1]
 
-        #print(type(batch),len(batch),type(batch[:,0]),len(batch[0,1]))
-        #images = torch.cat(batch[:][0],dim=0)
-        #print(images.shape)
+ 
         max_caption_len = 0
 
         images = torch.zeros(len(batch),3,image_size,image_size)
@@ -141,8 +139,7 @@ class COCO_data(Dataset):
             images[i] = batch[i][0]
             max_caption_len = max(max_caption_len, len(batch[i][1]))
         max_caption_len += 2
-    #     print("max caption len:",max_caption_len)
-        #print(len(batch),len(captions))
+
         captions = self.tokenizer.batch_encode_plus(
                 captions,
                 add_special_tokens=True,

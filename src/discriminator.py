@@ -38,25 +38,13 @@ class Discriminator(nn.Module):
         :return logits: [batch_size * num_rep] (1-D tensor)
         """
         emb = self.embeddings(inp).unsqueeze(1)  # batch_size * 1 * max_seq_len * embed_dim
-        # print(emb.shape)
         cons = [F.relu(conv(emb)) for conv in self.convs]  # [batch_size * num_filter * (seq_len-k_h+1) * num_rep]
-        # for con in cons:
-        #     print(con.shape)
         pools = [F.max_pool2d(con, (con.size(2), 1)).squeeze(2) for con in cons]  # [batch_size * num_filter * num_rep]
-        # for pool in pools:
-        #     print(pool.shape)
-        # print(pools.shape)
         pred = torch.cat(pools, 1)
-        # print(pred.shape)
         pred = pred.permute(0, 2, 1).contiguous().view(-1, self.feature_dim)  # (batch_size * num_rep) * feature_dim
-        # print(pred.shape)
         highway = self.highway(pred)
-        # print(highway.shape)
         pred = torch.sigmoid(highway) * F.relu(highway) + (1. - torch.sigmoid(highway)) * pred  # highway
-        # print(pred.shape)
-
         pred = self.feature2out(self.dropout(pred))
-        # print(pred.shape)
         logits = self.out2logits(pred).squeeze(1)  # [batch_size * num_rep]
 
         return logits
