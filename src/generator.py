@@ -244,7 +244,7 @@ class Generator(nn.Module):
             self.encoder = Encoder(args)
         self.decoder = Decoder(args)
         self.args = args
-        self.apply(init_weight)
+        init_weight(self)
         
     def forward(self, images, caps, lengths, pretrain=False):
         """Extract feature vectors from input images."""

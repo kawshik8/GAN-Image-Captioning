@@ -12,7 +12,7 @@ def init_weight(module):
     # for module in layers:
             # print(module)
     for m in module.modules():
-        # print(m)
+        print(m)
         if isinstance(m, torch.nn.Linear):
             # print("linear")
             torch.nn.init.xavier_uniform_(m.weight)
@@ -22,13 +22,16 @@ def init_weight(module):
         elif isinstance(m, torch.nn.Conv2d):
             # print("conv2d")
             torch.nn.init.xavier_uniform_(m.weight)
-            torch.nn.init.zeros_(m.bias)
+            if m.bias is not None:
+                torch.nn.init.zeros_(m.bias)
         elif isinstance(m, nn.BatchNorm1d):
             torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
-            torch.nn.init.constant_(m.bias.data, 0)
+            if m.bias is not None:
+                torch.nn.init.constant_(m.bias.data, 0)
         elif isinstance(m, nn.BatchNorm2d):
             torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
-            torch.nn.init.constant_(m.bias.data, 0)
+            if m.bias is not None:
+                torch.nn.init.constant_(m.bias.data, 0)
         elif isinstance(m, nn.Embedding):
             torch.nn.init.uniform_(m.weight)
 
