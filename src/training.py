@@ -22,10 +22,10 @@ class GANInstructor():
         # generator, discriminator
         self.gen = Generator(args).to(args.device)
         self.disc = Discriminator(args).to(args.device)
-        self.log = create_logger(__name__, silent=True, to_disk=True,
+        self.log = create_logger(__name__, silent=False, to_disk=True,
                                  log_file=args.log_file + ".txt")
 
-        self.sent_log = create_logger(__name__, silent=True, to_disk=True,
+        self.sent_log = create_logger(__name__, silent=False, to_disk=True,
                                  log_file=args.sent_log_file + ".txt")
 
         # Optimizer
@@ -194,14 +194,14 @@ class GANInstructor():
         loss = criterion(generated_captions.reshape(-1,generated_captions.size(-1)), real_captions.reshape(-1))
         return loss
 
-    def generator_train_iteration(self,generated_captions, what):
+    def generator_train_iteration(self,generated_captions, what, bce_loss):
         self.gen_opt.zero_grad()
-        bce_loss = nn.BCEWithLogitsLoss()
+        
         g_out = self.disc(generated_captions)
         g_loss = bce_loss(g_out, torch.ones_like(g_out))
 
         if what == 'train':
-            g_loss.backward(retain_graph = True)
+            g_loss.backward()
             self.gen_opt.step()
 
         self.writer.add_scalar('Generator_train_loss' if what=='train' else 'Generator_val_loss',g_loss,self.gen_steps)
@@ -209,23 +209,29 @@ class GANInstructor():
 
         return g_loss
 
-    def discriminator_train_iteration(self,real_captions, fake_captions,attn_mask, what):
-        bce_loss = nn.BCEWithLogitsLoss(reduction='mean')
-        real_captions = F.one_hot(real_captions, self.args.vocab_size).float()
-        # print(attn_mask.shape)
-        d_out_real = self.disc(real_captions)
-        d_out_fake = self.disc(fake_captions)
-        # print(d_out_real.shape, d_out_fake.shape)
-        self.disc_opt.zero_grad()
+    def discriminator_train_iteration(self,real_captions, fake_captions,attn_mask, what,bce_loss):
         
-        d_loss_real = bce_loss(d_out_real, torch.ones_like(d_out_real))
-        d_loss_fake = bce_loss(d_out_fake, torch.zeros_like(d_out_fake))
-        d_loss = d_loss_real + d_loss_fake
+        real_captions = F.one_hot(real_captions, self.args.vocab_size).float()
+
+        self.disc_opt.zero_grad()
+
+        d_out_real = self.disc(real_captions)
+        d_loss_real = bce_loss(d_out_real, torch.ones_like(d_out_real)*(torch.rand(1)*0.5 + 0.8))
 
         if what == 'train':
-            d_loss.backward(retain_graph=True)
+            d_loss_real.backward()
+
+        d_out_fake = self.disc(fake_captions)
+
+        d_loss_fake = bce_loss(d_out_fake, torch.zeros_like(d_out_fake)*(torch.rand(1)*0.3))
+
+        if what == 'train':
+            d_loss_fake.backward()
             self.disc_opt.step()
 
+        d_loss = d_loss_real + d_loss_fake
+
+        
         self.writer.add_scalar('Discriminator_train_loss' if what=='train' else 'Discriminator_val_loss',d_loss,self.disc_steps)
         self.disc_steps+=1
 
@@ -275,10 +281,11 @@ class GANInstructor():
                 if not self.cgan:              
                     real_captions = real_captions[:,1:]   # Remove start token   
                     fake_captions = fake_captions[:,:-1]   #Remove token generated for stop token (we generate sentence upto max length in sampling)
-                   
-                real_captions, gen_captions = real_captions.to(self.args.device), fake_captions.to(self.args.device)
+                    gen_captions = gen_captions[:,:-1]
 
-                loss = self.mle_iteration(real_captions, gen_captions.clone())
+                real_captions =  real_captions.to(self.args.device)
+
+                loss = self.mle_iteration(real_captions, fake_captions.clone())
                 mle_loss.append(loss.item())               
 
                 all_candidates+=self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
@@ -290,19 +297,19 @@ class GANInstructor():
                 # ===Train===
 
                 #Discriminator
-                d_loss, d_real, d_fake = self.discriminator_train_iteration(real_captions, gen_captions, attn_mask, what)
+                d_loss, d_real, d_fake = self.discriminator_train_iteration(real_captions, fake_captions, attn_mask, what, bce_loss)
                 d_real_loss.append(d_real.item())
                 d_fake_loss.append(d_fake.item())
                 disc_loss.append(d_loss.item())
 
                 #Generator
-                g_loss = self.generator_train_iteration(gen_captions, what)
+                g_loss = self.generator_train_iteration(gen_captions, what, bce_loss)
                 gen_loss.append(g_loss.item())
                 
                 progress.update(len(images))
                 progress.set_postfix(disc_loss=d_loss.item(), gen_loss=g_loss.item(), mle_loss=loss.item())
 
-                self.update_temperature(self.adv_epoch + (float_epoch/len(dataloader)), self.args.adv_epochs)  # update temperature
+                # self.update_temperature(self.adv_epoch + (float_epoch/len(dataloader)), self.args.adv_epochs)  # update temperature
 
         total_gen_loss = np.mean(gen_loss)
         total_disc_loss = np.mean(disc_loss)

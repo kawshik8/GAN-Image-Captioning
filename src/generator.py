@@ -61,9 +61,9 @@ class Decoder(nn.Module):
         """Set the hyper-parameters and build the layers."""
         super(Decoder, self).__init__()
         self.embed = nn.Embedding(args.vocab_size, args.gen_embed_dim, padding_idx=1)
-
+        self.dropout = nn.Dropout(dropout)
         if args.gen_model_type == 'lstm':
-            self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True, bidirectional=True)
+            self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True, bidirectional=True, dropout = self.dropout)
 
 
         elif args.gen_model_type == 'transformer':# and args.conditional_gan:
@@ -85,6 +85,7 @@ class Decoder(nn.Module):
         self.max_seq_length = args.max_seq_len
         self.temperature = args.temperature
         self.args = args
+
         #self.device = args.device
         
     def forward(self, image_features, caps, lengths, pretrain=False, attn_mask = None, max_caption_len=34):
