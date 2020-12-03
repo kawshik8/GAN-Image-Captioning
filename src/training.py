@@ -30,21 +30,20 @@ class GANInstructor():
 
         # Optimizer
         self.pretrain_opt = optim.Adam(self.gen.parameters(), lr=args.pretrain_lr)
-        self.gen_opt = optim.Adam(self.gen.parameters(), lr=args.gen_lr)
-        self.disc_opt = optim.Adam(self.disc.parameters(), lr=args.disc_lr)
+        self.gen_opt = optim.Adam(self.gen.parameters(), lr=args.gen_lr, betas=(0.5,0.999))
+        self.disc_opt = optim.Adam(self.disc.parameters(), lr=args.disc_lr, betas = (0.5,0.999))
 
         self.tokenizer = train_dataset.tokenizer
 
         #Schedulers ReduceLROnPlateau
-        if args.gen_model_type == 'lstm':
-            self.pretrain_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.pretrain_opt, patience=args.pretrain_lr_patience, verbose=True)
-            self.gen_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.gen_opt, patience=args.gen_lr_patience, verbose=True)
-            self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.disc_opt, patience=args.disc_lr_patience, verbose=True)
-        else:
-
-            self.pretrain_scheduler = torch.optim.lr_scheduler.OneCycleLR(self.pretrain_opt, max_lr=5e-4, total_steps = args.pretrain_epochs*((len(train_dataset)//args.pre_train_batch_size)+1), final_div_factor = 10, div_factor=25, pct_start=4/args.pretrain_epochs, anneal_strategy='cos')
-            self.gen_scheduler = torch.optim.lr_scheduler.OneCycleLR(self.gen_opt, max_lr=5e-4, total_steps = args.adv_epochs*((len(train_dataset)//args.adv_train_batch_size)+1), pct_start=5/args.pretrain_epochs, final_div_factor = 10, div_factor = 25, anneal_strategy='cos')
-            self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.disc_opt, patience=args.disc_lr_patience, verbose=True)
+        # if args.gen_model_type == 'lstm':
+        self.pretrain_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.pretrain_opt, patience=args.pretrain_lr_patience, verbose=True)
+        self.gen_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.gen_opt, patience=args.gen_lr_patience, verbose=True)
+        self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.disc_opt, patience=args.disc_lr_patience, verbose=True)
+        # else:
+        #     self.pretrain_scheduler = torch.optim.lr_scheduler.OneCycleLR(self.pretrain_opt, max_lr=5e-4, total_steps = args.pretrain_epochs*((len(train_dataset)//args.pre_train_batch_size)+1), final_div_factor = 10, div_factor=25, pct_start=4/args.pretrain_epochs, anneal_strategy='cos')
+        #     self.gen_scheduler = torch.optim.lr_scheduler.OneCycleLR(self.gen_opt, max_lr=5e-4, total_steps = args.adv_epochs*((len(train_dataset)//args.adv_train_batch_size)+1), pct_start=5/args.pretrain_epochs, final_div_factor = 10, div_factor = 25, anneal_strategy='cos')
+        #     self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.disc_opt, patience=args.disc_lr_patience, verbose=True)
         
         self.pre_train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.pre_train_batch_size, num_workers=args.num_workers, collate_fn=train_dataset.collate_fn)
         self.pre_eval_loader = DataLoader(dev_dataset, shuffle=False, batch_size=args.pre_eval_batch_size, num_workers=args.num_workers, collate_fn=dev_dataset.collate_fn)
@@ -198,10 +197,11 @@ class GANInstructor():
         self.gen_opt.zero_grad()
         
         g_out = self.disc(generated_captions)
-        g_loss = bce_loss(g_out, torch.ones_like(g_out))
+        g_loss = get_losses(g_out=g_out, loss_type=self.args.adv_loss_type)
 
         if what == 'train':
             g_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.disc.parameters(), self.args.clip_norm)
             self.gen_opt.step()
 
         self.writer.add_scalar('Generator_train_loss' if what=='train' else 'Generator_val_loss',g_loss,self.gen_steps)
@@ -216,20 +216,27 @@ class GANInstructor():
         self.disc_opt.zero_grad()
 
         d_out_real = self.disc(real_captions)
-        d_loss_real = bce_loss(d_out_real, torch.ones_like(d_out_real)*(torch.rand(1)*0.5 + 0.8))
-
-        if what == 'train':
-            d_loss_real.backward()
-
         d_out_fake = self.disc(fake_captions)
+        d_loss_real, d_loss_fake, d_loss = get_losses(d_out_real, d_out_fake, loss_type=self.args.adv_loss_type)
 
-        d_loss_fake = bce_loss(d_out_fake, torch.zeros_like(d_out_fake)*(torch.rand(1)*0.3))
+        # d_out_real = self.disc(real_captions)
+        # d_loss_real = bce_loss(d_out_real, torch.ones_like(d_out_real)*(torch.rand(d_out_real.size(0))*0.2 + 0.8).to(self.args.device))
+
+        # if what == 'train':
+        #     d_loss_real.backward()
+        #     self.disc_opt.step()
+
+        # self.disc_opt.zero_grad()
+        # d_out_fake = self.disc(fake_captions)
+        # d_loss_fake = bce_loss(d_out_fake, torch.zeros_like(d_out_fake))
+
 
         if what == 'train':
-            d_loss_fake.backward()
+            d_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.disc.parameters(), self.args.clip_norm)
             self.disc_opt.step()
 
-        d_loss = d_loss_real + d_loss_fake
+        # d_loss = d_loss_real + d_loss_fake
 
         
         self.writer.add_scalar('Discriminator_train_loss' if what=='train' else 'Discriminator_val_loss',d_loss,self.disc_steps)
@@ -309,7 +316,7 @@ class GANInstructor():
                 progress.update(len(images))
                 progress.set_postfix(disc_loss=d_loss.item(), gen_loss=g_loss.item(), mle_loss=loss.item())
 
-                # self.update_temperature(self.adv_epoch + (float_epoch/len(dataloader)), self.args.adv_epochs)  # update temperature
+                self.update_temperature(self.adv_epoch + (float_epoch/len(dataloader)), self.args.adv_epochs)  # update temperature
 
         total_gen_loss = np.mean(gen_loss)
         total_disc_loss = np.mean(disc_loss)

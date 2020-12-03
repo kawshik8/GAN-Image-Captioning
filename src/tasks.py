@@ -64,10 +64,26 @@ class COCO_data(Dataset):
                     if split not in row['filepath']:
                         captions.remove(t_captions[i])
                     else:
-                        caption_dict = {}
-                        for key in row:
-                                caption_dict[key] = row[key]
-                        self.captions.append(caption_dict)
+                        if split=='train':
+                            caption_dict = {}
+                            for key in row:
+                                    caption_dict[key] = row[key]
+
+                            self.captions.append(caption_dict)
+
+                        else:
+                            for caption in row['sentences'][:captions_per_image]:
+                                caption_dict = {}
+                                for key in row:
+                                    if type(row[key]) != list:
+                                        caption_dict[key] = row[key]
+                                
+                                for key in caption:
+                                    caption_dict[key] = caption[key]
+                                    
+                                self.captions.append(caption_dict)
+
+                        
                         # for caption in row['sentences'][:captions_per_image]:    
                         #     if vocab_dicts is None:
                         #         for word in caption['tokens']:
@@ -84,7 +100,7 @@ class COCO_data(Dataset):
                 
             pickle.dump(save_dict, open(os.path.join(image_path,split + "_" + str(captions_per_image) + ".pkl"),'wb+'))
                          
-                         
+        self.split = split             
         self.image_size = image_size
         self.transforms = transforms.Compose(
                             [
@@ -119,8 +135,10 @@ class COCO_data(Dataset):
 
         image = Image.open(image_path)
         image = self.transforms(image)
-
-        caption = random.choice(caption_dict['sentences'])['tokens']
+        if self.split == "train":
+            caption = random.choice(caption_dict['sentences'])['tokens']
+        else:
+            caption = caption_dict['tokens']
 
         return image, caption, torch.ones(1)*34        
            
@@ -195,5 +213,4 @@ if __name__ == '__main__':
 #             image, caption = instance
 
 #             progress_bar.update(len(image))
-            
             

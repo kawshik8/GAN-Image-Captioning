@@ -17,12 +17,12 @@ def add_model_args(parser):
 
     parser.add_argument('--gen-hidden-dim',
                             type=int,
-                            default=512,
+                            default=256,
                             help='hidden dimension of generator')
 
     parser.add_argument('--gen-embed-dim',
                             type=int,
-                            default=512,
+                            default=128,
                             help='embedding dimension of generator')
 
     parser.add_argument('--gen-num-layers',
@@ -65,10 +65,20 @@ def add_model_args(parser):
                             default=64,
                             help='embeddings dimension to use in discriminator')
 
+    parser.add_argument('--disc-hidden-dim',
+                            type=int,
+                            default=256,
+                            help='hidden dimension of generator')
+
     parser.add_argument('--disc-num-rep',
                             type=int,
                             default=64,
                             help='number of representations to use for CNN discriminator')
+
+    parser.add_argument('--disc-num-layers',
+                            type=int,
+                            default=4,
+                            help='number of layers in discriminator')
 
     parser.add_argument('--disc-filter-sizes',
                             type=list,
@@ -84,6 +94,11 @@ def add_model_args(parser):
                             type=str,
                             default='uniform',
                             help='init strategy for discriminator weights')
+
+    parser.add_argument('--disc-nheads',
+                            type=int,
+                            default=8,
+                            help='number of heads for multi headed attention in discriminator')
     
     #################### Common args #####################
     
