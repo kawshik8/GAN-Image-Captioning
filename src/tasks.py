@@ -64,24 +64,24 @@ class COCO_data(Dataset):
                     if split not in row['filepath']:
                         captions.remove(t_captions[i])
                     else:
-                        if split=='train':
-                            caption_dict = {}
-                            for key in row:
-                                    caption_dict[key] = row[key]
+                        # if split=='train':
+                        caption_dict = {}
+                        for key in row:
+                                caption_dict[key] = row[key]
 
-                            self.captions.append(caption_dict)
+                        self.captions.append(caption_dict)
 
-                        else:
-                            for caption in row['sentences'][:captions_per_image]:
-                                caption_dict = {}
-                                for key in row:
-                                    if type(row[key]) != list:
-                                        caption_dict[key] = row[key]
+                        # else:
+                        #     for caption in row['sentences'][:captions_per_image]:
+                        #         caption_dict = {}
+                        #         for key in row:
+                        #             if type(row[key]) != list:
+                        #                 caption_dict[key] = row[key]
                                 
-                                for key in caption:
-                                    caption_dict[key] = caption[key]
+                        #         for key in caption:
+                        #             caption_dict[key] = caption[key]
                                     
-                                self.captions.append(caption_dict)
+                        #         self.captions.append(caption_dict)
 
                         
                         # for caption in row['sentences'][:captions_per_image]:    
@@ -135,10 +135,11 @@ class COCO_data(Dataset):
 
         image = Image.open(image_path)
         image = self.transforms(image)
-        if self.split == "train":
-            caption = random.choice(caption_dict['sentences'])['tokens']
-        else:
-            caption = caption_dict['tokens']
+        caption = caption_dict['sentences'][0]['tokens']
+        # if self.split == "train":
+        #     caption = random.choice(caption_dict['sentences'])['tokens']
+        # else:
+        #     caption = caption_dict['tokens']
 
         return image, caption, torch.ones(1)*34        
            

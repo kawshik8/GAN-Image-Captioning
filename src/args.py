@@ -191,12 +191,12 @@ def add_training_args(parser):
 
     parser.add_argument('--pretrain-lr-patience',
                             type=int,
-                            default=10,
+                            default=40,
                             help='patience for pretrain LROnPlateau scheduler')
 
     parser.add_argument('--pretrain-patience',
                             type=int,
-                            default=10,
+                            default=40,
                             help='number of epochs to wait before early stopping')
 
 
@@ -209,7 +209,7 @@ def add_training_args(parser):
     
     parser.add_argument('--gen-lr-patience',
                             type=int,
-                            default=10,
+                            default=40,
                             help='patience for generator LROnPlateau scheduler')
 
     parser.add_argument('--disc-lr',
@@ -219,7 +219,7 @@ def add_training_args(parser):
 
     parser.add_argument('--disc-lr-patience',
                             type=int,
-                            default=10,
+                            default=40,
                             help='patience for discriminator LROnPlateau scheduler')
 
     parser.add_argument('--disc-train-freq',
@@ -249,7 +249,7 @@ def add_training_args(parser):
 
     parser.add_argument('--advtrain-patience',
                             type=int,
-                            default=10,
+                            default=40,
                             help='number of epochs to wait before early stopping')
 
     parser.add_argument('--temperature',

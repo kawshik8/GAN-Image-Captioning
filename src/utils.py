@@ -35,7 +35,7 @@ def init_weight(module):
         elif isinstance(m, nn.Embedding):
             torch.nn.init.uniform_(m.weight)
 
-def get_losses(d_out_real =None, d_out_fake=None, g_out = None, loss_type='JS'):
+def get_losses(d_out_real =None, d_out_fake=None, g_out = None, loss_type='standard'):
     """Get different adversarial losses according to given loss_type"""
     bce_loss = nn.BCEWithLogitsLoss()
 
