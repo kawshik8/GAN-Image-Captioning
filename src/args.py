@@ -87,7 +87,7 @@ def add_model_args(parser):
 
     parser.add_argument('--disc-num-filters',
                             type=list,
-                            default=[300, 300, 300],
+                            default=[100, 100, 100],
                             help='number of filters to use in discriminator per layer')
 
     parser.add_argument('--disc-init',
