@@ -138,6 +138,7 @@ class Decoder(nn.Module):
     def sample(self, batch_size, image_features, states=None, pretrain=False,max_caption_len=34):
         """Generate captions for given image features using greedy search."""
         sampled_ids = []
+        output_logits = torch.zeros(batch_size, max_caption_len, self.vocab_size).to(self.args.device)
         
         if self.args.conditional_gan:  
             if self.args.gen_model_type == 'transformer':            
@@ -169,13 +170,15 @@ class Decoder(nn.Module):
                 outputs.append(pred[:,-1])
    
             else:
-                gumbel_t = self.add_gumbel(self.linear(hiddens))            # outputs:  (batch_size, vocab_size)
+                logits = self.linear(hiddens)
+                gumbel_t = self.add_gumbel(logits)            # outputs:  (batch_size, vocab_size)
                 pred = F.softmax(gumbel_t * self.temperature, dim=-1)  
                 outputs.append(pred[:,-1])
             
             pred_index = pred.max(-1)[1]
             pred_index = pred_index[:,-1]                                     # predicted: (batch_size)          
             sampled_ids.append(pred_index)
+            output_logits[:,i] = logits
 
             if self.args.gen_model_type == 'lstm':
                 inputs = self.embed(pred_index.detach()).unsqueeze(1)        # inputs: (batch_size,1, embed_size)
@@ -185,7 +188,7 @@ class Decoder(nn.Module):
 
         sampled_ids = torch.stack(sampled_ids, 1)                # sampled_ids: (batch_size, max_seq_length)
         outputs = torch.stack(outputs, 1)
-        return outputs, sampled_ids
+        return outputs, sampled_ids, output_logits
     
     def add_gumbel(self, o_t, eps=1e-10, gpu=0):
         """Add o_t by a vector sampled from Gumbel(0,1)"""

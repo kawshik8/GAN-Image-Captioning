@@ -21,8 +21,8 @@ class GANInstructor():
     def __init__(self, args, train_dataset, dev_dataset):
 
         # generator, discriminator
-        # self.gen = Generator(args).to(args.device)
-        self.gen = LSTMGenerator(args).to(args.device)
+        self.gen = Generator(args).to(args.device)
+        # self.gen = LSTMGenerator(args).to(args.device)
         self.disc = Discriminator(args).to(args.device)
         self.log = create_logger(__name__, silent=False, to_disk=True,
                                  log_file=args.log_file + ".txt")
@@ -94,6 +94,7 @@ class GANInstructor():
             with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total = total) as progress:
                 for batch_idx, (images, captions, lengths, max_caption_len) in enumerate(dataloader):
                     
+                    choice = 0
                     self.pretrain_opt.zero_grad()
                     r_captions = self.train_dataset.convert_to_tokens_references(captions['input_ids'])
                     all_references += r_captions
@@ -113,7 +114,7 @@ class GANInstructor():
                     if torch.rand(1) < self.teacher_force_choice_pre:
                         gen_captions, gen_caption_ids = self.gen.decoder(features, captions, lengths, pretrain = True, attn_mask=attn_mask, max_caption_len = max_caption_len)
                     else:
-                        gen_captions, gen_caption_ids = self.gen.decoder.sample(features, pretrain = True, max_caption_len = max_caption_len)
+                        gen_captions, gen_caption_ids, _ = self.gen.decoder.sample(features, pretrain = True, max_caption_len = max_caption_len)
                     
                     real_captions, gen_captions = real_captions.to(self.args.device), gen_captions.to(self.args.device)
 
@@ -198,7 +199,7 @@ class GANInstructor():
         loss = criterion(generated_captions.reshape(-1,generated_captions.size(-1)), real_captions.reshape(-1))
         return loss
 
-    def generator_train_iteration(self,generated_captions, what, bce_loss, batch_size, max_caption_len):
+    def generator_train_iteration(self, generated_captions, what, bce_loss, batch_size, max_caption_len, features):
         self.gen_opt.zero_grad()
         total_norm = None
         g_out = self.disc(generated_captions)
@@ -215,7 +216,8 @@ class GANInstructor():
             torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.args.clip_norm)
             self.gen_opt.step()  
 
-        gen_captions, gen_caption_ids, output_logits = self.gen.sample(batch_size, batch_size, max_caption_len)
+        gen_captions, gen_caption_ids, output_logits = self.gen.decoder.sample(batch_size, features, states=None, pretrain=False, max_caption_len=max_caption_len)
+        # gen_captions, gen_caption_ids, output_logits = self.gen.decoder.sample(batch_size, batch_size, max_caption_len)
         g_out = self.disc(gen_captions)
         # g_loss = get_losses(g_out=g_out, loss_type=self.args.adv_loss_type)
         g_loss = bce_loss(g_out, torch.zeros_like(g_out))
@@ -235,7 +237,7 @@ class GANInstructor():
 
         return g_loss, total_norm
 
-    def discriminator_train_iteration(self,real_captions, fake_captions,attn_mask, what,bce_loss):
+    def discriminator_train_iteration(self,real_captions, fake_captions,attn_mask, what, bce_loss):
         total_norm =None
         real_captions = F.one_hot(real_captions, self.args.vocab_size).float()
 
@@ -322,8 +324,8 @@ class GANInstructor():
                 else:
                     features = None
    
-                # gen_captions, gen_caption_ids = self.gen.decoder.sample(images.size(0), features, states=None,pretrain=False, max_caption_len=max_caption_len)
-                gen_captions, gen_caption_ids, output_logits = self.gen.sample(images.size(0), images.size(0), max_caption_len)
+                gen_captions, gen_caption_ids, output_logits = self.gen.decoder.sample(images.size(0), features, states=None,pretrain=False, max_caption_len=max_caption_len)
+                # gen_captions, gen_caption_ids, output_logits = self.gen.sample(images.size(0), images.size(0), max_caption_len)
                 fake_captions = gen_captions.detach()   
                 
                 if not self.cgan:              
@@ -380,7 +382,7 @@ class GANInstructor():
         return (total_gen_loss, total_disc_loss, total_mle_loss, all_references, all_candidates, total_d_real, total_d_fake)
 
     def update_temperature(self, i, N):
-        self.gen.temperature = get_fixed_temperature(self.args.temperature, i, N, self.args.temp_adpt)
+        self.gen.decoder.temperature = get_fixed_temperature(self.args.temperature, i, N, self.args.temp_adpt)
 
     def _run(self, weights=[0.25,0.25,0.25,0.25]):
     
@@ -413,7 +415,7 @@ class GANInstructor():
                 val_perplexity = np.exp(train_mle_loss)
                 train_perplexity = np.exp(val_mle_loss)
                 self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f \n\t Total_d_real: %.4f | %.4f \n\t Total_d_fake: %.4f | %.4f \n\t Train PP: %.4f \n\t Val PP: %.4f \n\t Train BLEU: %.4f \n\t Val BLEU: %.4f' %\
-                              (adv_epoch, self.gen.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss,train_d_real, val_d_real,train_d_fake, val_d_fake, train_perplexity, val_perplexity, train_bleu, val_bleu))
+                              (adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss,train_d_real, val_d_real,train_d_fake, val_d_fake, train_perplexity, val_perplexity, train_bleu, val_bleu))
 
             if self.args.gen_model_type == 'lstm':
                 self.gen_scheduler.step(val_g_loss)
@@ -421,11 +423,12 @@ class GANInstructor():
 
             if best_loss is None or val_g_loss < best_loss :
                 best_loss = val_g_loss 
+                self.log.info("\n Best g_loss found ! ", best_loss)
                 torch.save({"generator":self.gen.state_dict(),
                             "discriminator":self.disc.state_dict()}, self.model_dir + "/adv_model.ckpt")
                 patience = 0
-            elif patience >= self.advtrain_patience:
-                self.log.info("Early Stopping at Epoch {}".format(adv_epoch))
-                break
+            # elif patience >= self.advtrain_patience:
+            #     self.log.info("Early Stopping at Epoch {}".format(adv_epoch))
+            #     break
             else:
                 patience += 1
