@@ -3,6 +3,7 @@ import torch
 import random
 import numpy as np
 from training import GANInstructor
+#from training_flip import GANInstructor
 from tasks import *#COCO_data, collate_fn
 from torch.utils.data import DataLoader
 from args import *
@@ -39,7 +40,7 @@ args.vocab_size = train_dataset.vocab_size
 
 val_dataset = COCO_data(args.data_dir + "/dataset_coco.json", args.data_dir, 'val',args.image_size, args.captions_per_image, max_seq_len=args.max_seq_len, dataset_percent=args.dataset_percent)
 
-
+#if args.flip_labels:
 inst = GANInstructor(args, train_dataset, val_dataset) #Pass the validation loader for second argument. 
 
 bleu_weights = [0.25,0.25,0.25,0.25] # 4 gram uniform weights -> BLEU-4

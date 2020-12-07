@@ -47,6 +47,9 @@ class Encoder(nn.Module):
         with (torch.no_grad() if self.freeze_cnn else torch.enable_grad()):
             features = self.resnet(images)
 
+        if self.freeze_cnn:
+            features = features.detach()
+
         if self.args.gen_model_output == 'transformer':
             features = self.bn(self.conv(features))
         else:
@@ -63,7 +66,7 @@ class Decoder(nn.Module):
         self.embed = nn.Embedding(args.vocab_size, args.gen_embed_dim, padding_idx=1)
 
         if args.gen_model_type == 'lstm':
-            self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True, bidirectional=True, dropout = 0.2)
+            self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True, bidirectional=False, dropout = 0.2)
 
 
         elif args.gen_model_type == 'transformer':# and args.conditional_gan:
@@ -79,7 +82,7 @@ class Decoder(nn.Module):
 
 
         if args.gen_model_type == 'lstm':
-            self.linear = nn.Linear(args.gen_hidden_dim * 2, args.vocab_size)
+            self.linear = nn.Linear(args.gen_hidden_dim, args.vocab_size)
         else:
             self.linear = nn.Linear(args.gen_embed_dim, args.vocab_size)
         self.max_seq_length = args.max_seq_len
@@ -138,7 +141,7 @@ class Decoder(nn.Module):
     def sample(self, batch_size, image_features, states=None, pretrain=False,max_caption_len=34):
         """Generate captions for given image features using greedy search."""
         sampled_ids = []
-        output_logits = torch.zeros(batch_size, max_caption_len, self.vocab_size).to(self.args.device)
+        output_logits = torch.zeros(batch_size, max_caption_len, self.args.vocab_size).to(self.args.device)
         
         if self.args.conditional_gan:  
             if self.args.gen_model_type == 'transformer':            
@@ -178,7 +181,7 @@ class Decoder(nn.Module):
             pred_index = pred.max(-1)[1]
             pred_index = pred_index[:,-1]                                     # predicted: (batch_size)          
             sampled_ids.append(pred_index)
-            output_logits[:,i] = logits
+            output_logits[:,i] = logits[:,-1]
 
             if self.args.gen_model_type == 'lstm':
                 inputs = self.embed(pred_index.detach()).unsqueeze(1)        # inputs: (batch_size,1, embed_size)

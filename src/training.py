@@ -23,11 +23,15 @@ class GANInstructor():
         # generator, discriminator
         self.gen = Generator(args).to(args.device)
         # self.gen = LSTMGenerator(args).to(args.device)
-        self.disc = Discriminator(args).to(args.device)
+        if args.disc_type == 'cnn':
+            self.disc = CDiscriminator(args).to(args.device)
+        elif args.disc_type == 'transformer':
+            self.disc = TDiscriminator(args).to(args.device)
+
         self.log = create_logger(__name__, silent=False, to_disk=True,
                                  log_file=args.log_file + ".txt")
 
-        self.sent_log = create_logger(__name__, silent=False, to_disk=True,
+        self.sent_log = create_logger(__name__, silent=True, to_disk=True,
                                  log_file=args.sent_log_file + ".txt")
 
         # Optimizer
@@ -137,7 +141,7 @@ class GANInstructor():
                         if self.args.gen_model_type == 'transformer':
                             self.pretrain_scheduler.step()
 
-                    self.writer.add_scalar('GenPreTraining_train_loss' if what=='train' else 'GenPreTraining_val_loss',loss,self.pretrain_steps)         
+                    self.writer.add_scalar('pretrain_losses/Gen_train_loss' if what=='train' else 'pretrain_losses/Gen_val_loss',loss,self.pretrain_steps)         
                     progress.update(len(images))
                     progress.set_postfix(loss=loss.item())#,norm=total_norm)        
                     
@@ -153,6 +157,7 @@ class GANInstructor():
         total_loss = 0
 
         best_loss = None
+        best_bleu = None
         patience = 0
 
         for epoch in range(self.args.pretrain_epochs):
@@ -181,13 +186,29 @@ class GANInstructor():
 
             if best_loss is None or val_epoch_loss < best_loss :
                 best_loss = val_epoch_loss
-                torch.save(self.gen.state_dict(), self.args.model_dir + "/pretrained_model.ckpt")
+                torch.save(self.gen.state_dict(), self.args.model_dir + "/pretrained_model_best_mle.ckpt")
                 patience = 0
             elif patience >= self.pretrain_patience:
                 self.log.info("Early Stopping at Epoch {}".format(epoch))
+                torch.save(self.gen.state_dict(), self.args.model_dir + "/pretrained_model_last.ckpt")
                 break
             else:
                 patience += 1
+
+            if best_bleu is None or val_bleu > best_bleu:
+                best_bleu = val_bleu
+                torch.save(self.gen.state_dict(), self.args.model_dir + "/pretrained_model_best_bleu.ckpt")
+
+            if epoch % self.args.checkpoint_freq == 0:
+                self.log.info("\n Saved checkpoint at {} ".format(epoch))
+
+
+            self.writer.add_scalar("pretrain_losses_epoch/val_loss",val_epoch_loss, epoch)
+            self.writer.add_scalar("pretrain_losses_epoch/train_loss",train_epoch_loss, epoch)
+            self.writer.add_scalar("pretrain_metrics/train_perplexity",train_perplexity,epoch)
+            self.writer.add_scalar("pretrain_metrics/val_perplexity",val_perplexity,epoch)
+            self.writer.add_scalar("pretrain_metrics/train_bleu",train_bleu,epoch)
+            self.writer.add_scalar("pretrain_metrics/val_bleu",val_bleu,epoch)
 
             self.pretrain_steps+=1
 
@@ -199,28 +220,16 @@ class GANInstructor():
         loss = criterion(generated_captions.reshape(-1,generated_captions.size(-1)), real_captions.reshape(-1))
         return loss
 
-    def generator_train_iteration(self, generated_captions, what, bce_loss, batch_size, max_caption_len, features):
+    def generator_train_iteration(self, generated_captions, what, bce_loss, batch_size, max_caption_len, features, images):
         self.gen_opt.zero_grad()
         total_norm = None
         g_out = self.disc(generated_captions)
         # g_loss = get_losses(g_out=g_out, loss_type=self.args.adv_loss_type)
-        g_loss = bce_loss(g_out, torch.zeros_like(g_out))
-        if what == 'train':
-            g_loss.backward()
-            # total_norm = 0.0
-            # for p in self.gen.parameters():
-            #     param_norm = p.grad.data.norm(2)
-            #     total_norm += param_norm.item() ** 2
-            # total_norm = total_norm ** (1. / 2)
-            # print("Gen: ",total_norm)
-            torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.args.clip_norm)
-            self.gen_opt.step()  
-
-        gen_captions, gen_caption_ids, output_logits = self.gen.decoder.sample(batch_size, features, states=None, pretrain=False, max_caption_len=max_caption_len)
-        # gen_captions, gen_caption_ids, output_logits = self.gen.decoder.sample(batch_size, batch_size, max_caption_len)
-        g_out = self.disc(gen_captions)
-        # g_loss = get_losses(g_out=g_out, loss_type=self.args.adv_loss_type)
-        g_loss = bce_loss(g_out, torch.zeros_like(g_out))
+        if self.args.flip_labels:
+            g_loss = bce_loss(g_out, torch.zeros_like(g_out))
+        else:
+            g_loss = bce_loss(g_out, torch.ones_like(g_out))
+        
         if what == 'train':
             g_loss.backward()
             total_norm = 0.0
@@ -229,10 +238,39 @@ class GANInstructor():
                 total_norm += param_norm.item() ** 2
             total_norm = total_norm ** (1. / 2)
             #print("Gen: ",total_norm)
-            torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.args.clip_norm)
-            self.gen_opt.step()
+            grad_norm = torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.args.clip_norm)
+            self.gen_opt.step()  
 
-        self.writer.add_scalar('Generator_train_loss' if what=='train' else 'Generator_val_loss',g_loss,self.gen_steps)
+        if self.args.gen_steps > 1 and what == 'train':
+            for g_mini_step in range(self.args.gen_steps - 1):
+
+                self.gen_opt.zero_grad()
+        
+                if self.cgan:
+                    features = self.gen.encoder(images)
+                gen_captions, gen_caption_ids, output_logits = self.gen.decoder.sample(batch_size, features, states=None, pretrain=False, max_caption_len=max_caption_len)
+#                gen_captions, gen_caption_ids, output_logits = self.gen.decoder.sample(batch_size, batch_size, max_caption_len)
+                g_out = self.disc(gen_captions)
+                g_loss = get_losses(g_out=g_out, loss_type=self.args.adv_loss_type)
+                if self.args.flip_labels:
+                    g_loss = bce_loss(g_out, torch.zeros_like(g_out))
+                else:
+                    g_loss = bce_loss(g_out, torch.ones_like(g_out))
+                if what == 'train':
+                    g_loss.backward()
+        #            total_norm = 0.0
+        #    for p in self.gen.parameters():
+        #      if p.grad is not None:
+        #        param_norm = p.grad.data.norm(2)
+        #        total_norm += param_norm.item() ** 2
+        #    total_norm = total_norm ** (1. / 2)
+        #    #print("Gen: ",total_norm)
+                    torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.args.clip_norm)
+                    self.gen_opt.step()
+
+        if what == 'train':
+            self.writer.add_scalar('adv_norms/Gen_train_norm',total_norm, self.gen_steps)
+        self.writer.add_scalar('adv_losses/Generator_train_loss' if what=='train' else 'adv_losses/Generator_val_loss',g_loss,self.gen_steps)
         self.gen_steps+=1
 
         return g_loss, total_norm
@@ -243,28 +281,44 @@ class GANInstructor():
 
         self.disc_opt.zero_grad()
 
+        #print(real_captions.shape)
+        #if self.args.disc_type == 'cnn':
         d_out_real = self.disc(real_captions) # 16 x 34x 5000
+        #elif self.args.disc_type == 'transformer':
+        #    d_out_real = self.disc(real_captions.transpose(0,1)).transpose(0,1)
+        #print(d_out_real.shape)
         # d_out_fake = self.disc(fake_captions) 
         # d_loss_real, d_loss_fake, d_loss = get_losses(d_out_real, d_out_fake, loss_type=self.args.adv_loss_type)
 	
         # d_out_real = self.disc(real_captions)
-        real_labels_t = torch.ones(d_out_real.shape) - (torch.rand(d_out_real.size(0)) * 0.1)
-        fake_labels_t = torch.zeros(d_out_real.shape) + (torch.rand(d_out_real.size(0)) * 0.1)
+        real_labels_t = torch.ones(d_out_real.size(0)) - (torch.rand(d_out_real.size(0)) * 0.1)
+        fake_labels_t = torch.zeros(d_out_real.size(0)) + (torch.rand(d_out_real.size(0)) * 0.1)
 
         choice = torch.rand(d_out_real.size(0))
         real_labels = torch.where(choice < 0.05, fake_labels_t, real_labels_t).to(self.args.device)
         choice = torch.rand(d_out_real.size(0))
         fake_labels = torch.where(choice < 0.05, real_labels_t, fake_labels_t).to(self.args.device)
 
-        d_loss_real = bce_loss(d_out_real, fake_labels) #*(torch.rand(d_out_real.size(0))*0.2 + 0.8).to(self.args.device))
+        #print(d_out_real.shape, fake_labels.shape)
+        if self.args.flip_labels:
+            d_loss_real = bce_loss(d_out_real, fake_labels)
+        else:
+            d_loss_real = bce_loss(d_out_real, real_labels) #*(torch.rand(d_out_real.size(0))*0.2 + 0.8).to(self.args.device))
 
         if what == 'train':
             d_loss_real.backward()
             # self.disc_opt.step()
 
         # self.disc_opt.zero_grad()
+       # if self.args.disc_type == 'cnn':
         d_out_fake = self.disc(fake_captions)
-        d_loss_fake = bce_loss(d_out_fake, real_labels)
+       # elif self.args.disc_type == 'transformer':
+       #     d_out_real = self.disc(fake_captions.transpose(0,1)).transpose(0,1)
+       
+        if self.args.flip_labels:
+            d_loss_fake = bce_loss(d_out_fake, real_labels)
+        else:
+            d_loss_fake = bce_loss(d_out_fake, fake_labels)
 
 
         if what == 'train':
@@ -280,8 +334,11 @@ class GANInstructor():
 
         d_loss = d_loss_real + d_loss_fake
 
-        
-        self.writer.add_scalar('Discriminator_train_loss' if what=='train' else 'Discriminator_val_loss',d_loss,self.disc_steps)
+        if what == 'train':
+            self.writer.add_scalar('adv_norms/Disc_train_norm', total_norm, self.disc_steps)
+        self.writer.add_scalar('adv_losses/Discriminator_train_loss' if what=='train' else 'adv_losses/Discriminator_val_loss',d_loss,self.disc_steps)
+        self.writer.add_scalar('adv_losses/Discriminator_train_fake_loss' if what=='train' else 'adv_losses/Discriminator_val_real_loss',d_loss_real,self.disc_steps)
+        self.writer.add_scalar('adv_losses/Discriminator_train_real_loss' if what=='train' else 'adv_losses/Discriminator_val_fake_loss',d_loss_fake,self.disc_steps)
         self.disc_steps+=1
 
         return d_loss, d_loss_real, d_loss_fake, total_norm
@@ -338,6 +395,7 @@ class GANInstructor():
 
                 loss = self.mle_iteration(real_captions, output_logits)
                 mle_loss.append(loss.item())               
+                self.writer.add_scalar('adv_losses/gen_mle_loss',loss.item(),self.gen_steps)
 
                 all_candidates+=self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
                 
@@ -356,7 +414,7 @@ class GANInstructor():
                     disc_loss.append(d_loss.item())
 
                 #Generator
-                g_loss, total_norm_g = self.generator_train_iteration(gen_captions, what, bce_loss,images.size(0), max_caption_len)
+                g_loss, total_norm_g = self.generator_train_iteration(gen_captions, what, bce_loss,images.size(0), max_caption_len, features, images)
                 gen_loss.append(g_loss.item())
 
                 # g_loss = self.generator_train_iteration(gen_captions, what, bce_loss)
@@ -369,6 +427,7 @@ class GANInstructor():
                     progress.set_postfix(disc_loss=d_loss.item(), gen_loss=g_loss.item(), mle_loss=loss.item(),d_norm = total_norm_d, g_norm = total_norm_g)
 
                 self.update_temperature(self.adv_epoch + (float_epoch/len(dataloader)), self.args.adv_epochs)  # update temperature
+                self.writer.add_scalar('temperature',self.gen.decoder.temperature,self.gen_steps)
 
         total_gen_loss = np.mean(gen_loss)
         total_disc_loss = np.mean(disc_loss)
@@ -395,6 +454,8 @@ class GANInstructor():
         
         patience = 0
         best_loss = None
+        best_mle_loss = None
+        best_bleu = None
         
         for adv_epoch in range(self.args.adv_epochs):
 
@@ -416,6 +477,22 @@ class GANInstructor():
                 train_perplexity = np.exp(val_mle_loss)
                 self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f \n\t Total_d_real: %.4f | %.4f \n\t Total_d_fake: %.4f | %.4f \n\t Train PP: %.4f \n\t Val PP: %.4f \n\t Train BLEU: %.4f \n\t Val BLEU: %.4f' %\
                               (adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss,train_d_real, val_d_real,train_d_fake, val_d_fake, train_perplexity, val_perplexity, train_bleu, val_bleu))
+            
+            self.writer.add_scalar('adv_losses_epoch/gen_train_loss',train_g_loss,adv_epoch)
+            self.writer.add_scalar('adv_losses_epoch/disc_train_loss',train_d_loss,adv_epoch)
+            self.writer.add_scalar('adv_losses_epoch/train_mle_loss',train_mle_loss,adv_epoch)
+            self.writer.add_scalar('adv_losses_epoch/disc_train_real_loss',train_d_real,adv_epoch)
+            self.writer.add_scalar('adv_losses_epoch/disc_train_fake_loss',train_d_fake,adv_epoch)
+            self.writer.add_scalar('adv_metrics/train_bleu',train_bleu,adv_epoch)
+            self.writer.add_scalar('adv_metrics/train_perplexity',np.exp(train_mle_loss),adv_epoch)
+            
+            self.writer.add_scalar('adv_losses_epoch/gen_val_loss',val_g_loss,adv_epoch)
+            self.writer.add_scalar('adv_losses_epoch/disc_val_loss',val_d_loss,adv_epoch)
+            self.writer.add_scalar('adv_losses_epoch/val_mle_loss',val_mle_loss,adv_epoch)
+            self.writer.add_scalar('adv_losses_epoch/disc_val_real_loss',val_d_real,adv_epoch)
+            self.writer.add_scalar('adv_losses_epoch/disc_val_fake_loss',val_d_fake,adv_epoch)
+            self.writer.add_scalar('adv_metrics/val_bleu',val_bleu,adv_epoch)
+            self.writer.add_scalar('adv_metrics/val_perplexity',np.exp(val_mle_loss),adv_epoch)
 
             if self.args.gen_model_type == 'lstm':
                 self.gen_scheduler.step(val_g_loss)
@@ -423,12 +500,31 @@ class GANInstructor():
 
             if best_loss is None or val_g_loss < best_loss :
                 best_loss = val_g_loss 
-                self.log.info("\n Best g_loss found ! ", best_loss)
+                self.log.info("\n Best g_loss found ! {} ".format(best_loss))
                 torch.save({"generator":self.gen.state_dict(),
-                            "discriminator":self.disc.state_dict()}, self.model_dir + "/adv_model.ckpt")
+                            "discriminator":self.disc.state_dict()}, self.model_dir + "/adv_model_best_gloss.ckpt")
                 patience = 0
             # elif patience >= self.advtrain_patience:
             #     self.log.info("Early Stopping at Epoch {}".format(adv_epoch))
             #     break
             else:
                 patience += 1
+
+
+            if best_mle_loss is None or val_mle_loss < best_mle_loss:
+                best_mle_loss = val_mle_loss
+                self.log.info("\n Best mle_loss found ! {} ".format(best_mle_loss))
+                torch.save({"generator":self.gen.state_dict(),
+                            "discriminator":self.disc.state_dict()}, self.model_dir + "/adv_model_best_mle.ckpt")
+
+            
+            if adv_epoch % self.args.checkpoint_freq == 0:
+                self.log.info("\n Saved checkpoint at {} ".format(adv_epoch))
+                torch.save({"generator":self.gen.state_dict(),
+                            "discriminator":self.disc.state_dict()}, self.model_dir + "/adv_model_checkpoint.ckpt")
+
+            if best_bleu is None or val_bleu > best_bleu:
+                best_bleu = val_bleu
+                self.log.info("\n Best bleu found ! {} ".format(best_bleu))
+                torch.save({"generator":self.gen.state_dict(),
+                            "discriminator":self.disc.state_dict()}, self.model_dir + "/adv_model_best_bleu.ckpt")

@@ -60,6 +60,12 @@ def add_model_args(parser):
 
     ################### Discriminator ###################
 
+    parser.add_argument('--disc-type',
+                            type=str,
+                            default='cnn',
+                            choices=["transformer","cnn"],
+                            help='type of discriminator to use')
+
     parser.add_argument('--disc-embed-dim',
                             type=int,
                             default=64,
@@ -67,7 +73,7 @@ def add_model_args(parser):
 
     parser.add_argument('--disc-hidden-dim',
                             type=int,
-                            default=256,
+                            default=128,
                             help='hidden dimension of generator')
 
     parser.add_argument('--disc-num-rep',
@@ -87,7 +93,7 @@ def add_model_args(parser):
 
     parser.add_argument('--disc-num-filters',
                             type=list,
-                            default=[100, 100, 100],
+                            default=[300, 300, 300],
                             help='number of filters to use in discriminator per layer')
 
     parser.add_argument('--disc-init',
@@ -207,6 +213,11 @@ def add_training_args(parser):
                             default=1e-4,
                             help='learning rate for adversarial training of generator')
     
+    parser.add_argument('--flip-labels',
+                            type=int,
+                            default=0,
+                            help='flip real and fake labels')
+
     parser.add_argument('--gen-lr-patience',
                             type=int,
                             default=40,
@@ -226,6 +237,11 @@ def add_training_args(parser):
                             type=int,
                             default=1,
                             help='ratio of training steps of disc vs gen for stabilization')
+
+    parser.add_argument('--gen-steps',
+                            type=int,
+                            default=1,
+                            help='no of steps for generator for each batch')
 
     parser.add_argument('--adv-epochs',
                             type=int,
@@ -334,6 +350,10 @@ def get_args():
                             default="sent_log",
                             help='Log file to save logs')
 
+    parser.add_argument('--checkpoint-freq',
+                            type=int,
+                            default=10,
+                            help=' frequency of checkpointing model weights ')
 
     args = parser.parse_args()
 

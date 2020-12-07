@@ -7,9 +7,9 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from utils import init_weight
 from transformer import *
 
-class Discriminator(nn.Module):
+class CDiscriminator(nn.Module):
     def __init__(self, args, gpu=False,dropout=0.2):
-        super(Discriminator, self).__init__()
+        super(CDiscriminator, self).__init__()
 
         self.vocab_size = args.vocab_size
         self.embed_dim = args.disc_embed_dim
@@ -75,60 +75,61 @@ class Discriminator(nn.Module):
                 elif self.args.disc_init == 'normal':
                     torch.nn.init.normal_(param, std=stddev)
 
-if __name__=='__main__':
-    from args import get_args
+#if __name__=='__main__':
+#    from args import get_args
+#
+#    args = get_args()
+#    discriminator = Discriminator(args)
 
-    args = get_args()
-    discriminator = Discriminator(args)
-
-    b = 16
-    real_captions = F.one_hot(torch.ones(b,34,dtype=torch.long),args.vocab_size).float().to(args.device)
-    fake_captions = torch.rand(b,34,args.vocab_size).to(args.device)
-    print(real_captions.shape, fake_captions.shape)
-
-    real_pred = discriminator(real_captions)
-    fake_pred = discriminator(fake_captions)
-    print("output fake and real : ",fake_pred.shape, real_pred.shape)
-
-
-# class Discriminator(nn.Module):
-#     def __init__(self, args, gpu=False,dropout=0.2):
-#         super(Discriminator, self).__init__()
-
-#         self.args = args
-#         self.embeddings = nn.Linear(args.vocab_size, args.disc_embed_dim)
-#         self.pos_embeddings = nn.Embedding(100, args.disc_embed_dim)
-
-#         encoder_layer = TransformerEncoderLayer(args.disc_embed_dim, args.disc_nheads, args.disc_hidden_dim)
-#         self.transformer = TransformerEncoder(encoder_layer, args.disc_num_layers)
-
-#         self.out2logits = nn.Linear(args.disc_embed_dim, 1)
-
-#         self.init_params()
+ ##   b = 16
+#    real_captions = F.one_hot(torch.ones(b,34,dtype=torch.long),args.vocab_size).float().to(args.device)
+#    fake_captions = torch.rand(b,34,args.vocab_size).to(args.device)
+#    print(real_captions.shape, fake_captions.shape)
+#
+#    real_pred = discriminator(real_captions#)
+#    fake_pred = discriminator(fake_captions)#
+#    print("output fake and real : ",fake_pred.shape, real_pred.shape)
 
 
-#     def forward(self, input):
+class TDiscriminator(nn.Module):
+     def __init__(self, args, gpu=False,dropout=0.2):
+         super(TDiscriminator, self).__init__()
+
+         self.args = args
+         self.embeddings = nn.Linear(args.vocab_size, args.disc_embed_dim)
+         self.pos_embeddings = nn.Embedding(100, args.disc_embed_dim)
+
+         encoder_layer = TransformerEncoderLayer(args.disc_embed_dim, args.disc_nheads, args.disc_hidden_dim)
+         self.transformer = TransformerEncoder(encoder_layer, args.disc_num_layers)
+
+         self.out2logits = nn.Linear(args.disc_embed_dim, 1)
+
+         self.init_params()
+
+
+     def forward(self, input):
         
-#         embeddings = self.embeddings(input) # 16 x 34 x 50234 -> 16 x34 x 32
+         embeddings = self.embeddings(input) # 16 x 34 x 50234 -> 16 x34 x 32
 
-#         positions = self.pos_embeddings(torch.arange(embeddings.size(1)).unsqueeze(0).repeat(embeddings.size(0),1).to(embeddings.device)).transpose(0,1)
+         positions = self.pos_embeddings(torch.arange(embeddings.size(1)).unsqueeze(0).repeat(embeddings.size(0),1).to(embeddings.device)).transpose(0,1)
 
-#         # print(embeddings.shape, positions.shape)
+         # print(embeddings.shape, positions.shape)
 
-#         out = self.transformer(embeddings.transpose(0,1), pos = positions).transpose(0,1)[:,0]
+         out = self.transformer(embeddings.transpose(0,1), pos = positions).transpose(0,1)[:,0]
+#         print(out.shape)
 
-#         logits = self.out2logits(out)
+         logits = self.out2logits(out).squeeze()
+#         print(logits.shape)
+         return logits
 
-#         return logits
-
-#     def init_params(self):
-#         for param in self.parameters():
-#             if param.requires_grad and len(param.shape) > 0:
-#                 stddev = 1 / math.sqrt(param.shape[0])
-#                 if self.args.disc_init == 'uniform':
-#                     torch.nn.init.uniform_(param, a=-0.05, b=0.05)
-#                 elif self.args.disc_init == 'normal':
-#                     torch.nn.init.normal_(param, std=stddev)
+     def init_params(self):
+         for param in self.parameters():
+             if param.requires_grad and len(param.shape) > 0:
+                 stddev = 1 / math.sqrt(param.shape[0])
+                 if self.args.disc_init == 'uniform':
+                     torch.nn.init.uniform_(param, a=-0.05, b=0.05)
+                 elif self.args.disc_init == 'normal':
+                     torch.nn.init.normal_(param, std=stddev)
 
 if __name__=='__main__':
     from args import get_args
