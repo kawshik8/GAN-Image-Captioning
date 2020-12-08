@@ -264,7 +264,7 @@ class GANInstructor():
 
         if what == 'train':
             self.writer.add_scalar('adv_norms/Gen_train_norm',total_norm, self.gen_steps)
-        # self.writer.add_scalar('adv_losses/Generator_train_loss' if what=='train' else 'adv_losses/Generator_val_loss',g_loss,self.gen_steps)
+        self.writer.add_scalar('adv_losses/Generator_train_loss' if what=='train' else 'adv_losses/Generator_val_loss',g_loss,self.gen_steps)
         self.gen_steps+=1
 
         return g_loss, total_norm
@@ -357,9 +357,9 @@ class GANInstructor():
 
         if what == 'train':
             self.writer.add_scalar('adv_norms/Disc_train_norm', total_norm, self.disc_steps)
-        # self.writer.add_scalar('adv_losses/Discriminator_train_loss' if what=='train' else 'adv_losses/Discriminator_val_loss',d_loss,self.disc_steps)
-        # self.writer.add_scalar('adv_losses/Discriminator_train_fake_loss' if what=='train' else 'adv_losses/Discriminator_val_real_loss',d_loss_real,self.disc_steps)
-        # self.writer.add_scalar('adv_losses/Discriminator_train_real_loss' if what=='train' else 'adv_losses/Discriminator_val_fake_loss',d_loss_fake,self.disc_steps)
+        self.writer.add_scalar('adv_losses/Discriminator_train_loss' if what=='train' else 'adv_losses/Discriminator_val_loss',d_loss,self.disc_steps)
+        self.writer.add_scalar('adv_losses/Discriminator_train_fake_loss' if what=='train' else 'adv_losses/Discriminator_val_real_loss',d_loss_real,self.disc_steps)
+        self.writer.add_scalar('adv_losses/Discriminator_train_real_loss' if what=='train' else 'adv_losses/Discriminator_val_fake_loss',d_loss_fake,self.disc_steps)
         self.disc_steps+=1
 
         return d_loss, d_loss_real, d_loss_fake, total_norm
@@ -437,20 +437,20 @@ class GANInstructor():
                 g_loss, total_norm_g = self.generator_train_iteration(gen_captions, what, bce_loss,images.size(0), max_caption_len, features, images)
                 gen_loss.append(g_loss.item())
 
-                self.writer.add_scalars(f'loss/Gen_Disc_Loss', {
-                                    'd_loss': d_loss.item(),
-                                    'g_loss':g_loss.item()
-                                }, self.gen_steps)
-                self.writer.add_scalars(f'loss/Gen_DiscRF_Loss', {
-                                    'd_real_loss':d_real.item(),
-                                    'd_fake_loss':d_fake.item(),
-                                    'g_loss':g_loss.item()
-                                }, self.gen_steps)
-                self.writer.add_scalars(f'loss/Disc_DiscRF_Loss', {
-                                    'd_real_loss':d_real.item(),
-                                    'd_fake_loss':d_fake.item(),
-                                    'd_loss':d_loss.item()
-                                }, self.gen_steps)
+#                self.writer.add_scalars('' if what == 'train' else 'adv_losses/gen_disc_val_loss', {
+#                                    '': d_loss.item(),
+#                                    '':g_loss.item()
+#                                }, self.gen_steps)
+#                self.writer.add_scalars('' if what == 'train' else 'adv_losses/gen_discRF_val_loss', {
+#                                    '':d_real.item(),
+#                                    '':d_fake.item(),
+#                                    '':g_loss.item()
+#                                }, self.gen_steps)
+#                self.writer.add_scalars('', {
+#                                    'adv_losses/discRF_real':d_real.item(),
+#                                    'adv_losses/discRF_fake':d_fake.item(),
+#                                    'adv_losses/discRF_total':d_loss.item()
+#                                }, self.gen_steps)
 
 
 
