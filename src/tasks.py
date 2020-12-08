@@ -16,9 +16,11 @@ from tqdm import tqdm
 import pickle
 
 from transformers import RobertaTokenizer
+from tokenizers.implementations import ByteLevelBPETokenizer
+from tokenizers.processors import BertProcessing
 random.seed(42)
 class COCO_data(Dataset):
-    def __init__(self, captions_path, image_path, split, image_size=256, captions_per_image=5, max_seq_len=34, dataset_percent=1.0):
+    def __init__(self, captions_path, image_path, split, image_size=256, captions_per_image=5, max_seq_len=34, dataset_percent=1.0, choose_tokenizer='roberta'):
         
         assert split in {'train','val','test'}
 
@@ -29,7 +31,20 @@ class COCO_data(Dataset):
         
         captions = json_file['images']
 
-        self.tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+        if(choose_tokenizer=='roberta'):
+            self.tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+            self.vocab_size = self.tokenizer.vocab_size
+        else:
+            self.tokenizer = ByteLevelBPETokenizer(
+                "../../coco_data/tokenizer/"+choose_tokenizer+"-vocab.json",
+                "../../coco_data/tokenizer/"+choose_tokenizer+"-merges.txt",
+            )
+            self.tokenizer._tokenizer.post_processor = BertProcessing(
+                ("</s>", self.tokenizer.token_to_id("</s>")),
+                ("<s>", self.tokenizer.token_to_id("<s>")),
+            )
+            self.tokenizer.enable_truncation(max_length=512)
+            self.vocab_size = self.tokenizer.get_vocab_size()
         
         if os.path.exists(os.path.join(image_path, split + "_" + str(captions_per_image) + ".pkl")):
             print("Loading from saved dict")
@@ -112,7 +127,7 @@ class COCO_data(Dataset):
                             ]
                         )
     
-        self.vocab_size = self.tokenizer.vocab_size
+        
         self.dataset_percent = dataset_percent
         self.max_seq_len = max_seq_len
             
@@ -158,29 +173,33 @@ class COCO_data(Dataset):
             images[i] = batch[i][0]
             max_caption_len = max(max_caption_len, len(batch[i][1]))
         max_caption_len += 2
-
-        captions = self.tokenizer.batch_encode_plus(
-                captions,
-                add_special_tokens=True,
-                padding='longest',
-                is_split_into_words=True,
-                return_attention_mask=True,
-                return_token_type_ids=False,
-                return_tensors='pt',
-                return_length = True
+        # print("before", captions)
+        self.tokenizer.enable_padding()
+        captions = self.tokenizer.encode_batch(#self.tokenizer.batch_encode_plus(
+                [' '.join(c) for c in captions],
+                add_special_tokens=True
+                # padding='longest',
+                # is_split_into_words=True,
+                # return_attention_mask=True,
+                # return_token_type_ids=False,
+                # return_tensors='pt',
+                # return_length = True
             )
-        
-        captions['attention_mask'] = captions['attention_mask'].squeeze().type(torch.LongTensor)
-        captions['input_ids'] = captions['input_ids'].squeeze().type(torch.LongTensor)      
-        captions['length'] = captions['length'].squeeze().type(torch.LongTensor)
-
-        captions['length'], indices = torch.sort(captions['length'], dim=0, descending=True)
-        captions['input_ids'] = captions['input_ids'][indices]
-        captions['attention_mask'] = captions['attention_mask'][indices]
-
-        images = images[indices]          
-
-        return images, captions, captions['length'], captions["input_ids"].shape[1]
+        tokenized_captions = {}
+        tokenized_captions['attention_mask'] = torch.tensor([c.attention_mask for c in captions]).type(torch.LongTensor) #captions['attention_mask'].squeeze().type(torch.LongTensor)
+        tokenized_captions['input_ids'] =torch.tensor([c.ids for c in captions]).type(torch.LongTensor)      
+        tokenized_captions['length'] = torch.tensor([len(c.tokens) for c in captions]).type(torch.LongTensor)
+        # print("attn: ",tokenized_captions['attention_mask'] )
+        # print("id: ",tokenized_captions['input_ids'] )
+        # print("length: ",tokenized_captions['length'] )
+        tokenized_captions['length'], indices = torch.sort(tokenized_captions['length'], dim=0, descending=True)
+        tokenized_captions['input_ids'] = tokenized_captions['input_ids'][indices]
+        tokenized_captions['attention_mask'] = tokenized_captions['attention_mask'][indices]
+        # print(captions[0])
+        # print(len(captions[0].tokens))
+        # images = images[indices]          
+        # return images, captions, [],[]
+        return images, tokenized_captions, tokenized_captions['length'], tokenized_captions["input_ids"].shape[1]
 
     def convert_to_tokens_references(self,captions, skip_special_tokens = True):
         batch_captions = []
@@ -197,10 +216,17 @@ class COCO_data(Dataset):
 
 if __name__ == '__main__':
      
-    dataset = COCO_data("../coco_data/dataset_coco.json","../coco_data",'train',captions_per_image=1)
-    loader = DataLoader(dataset, batch_size=16, shuffle=False, collate_fn=dataset.collate_fn, num_workers=4)
-    for i,instance in enumerate(loader):
-        image,caption,lengths, max_len = instance
+    vocabs = ['finetuned5000', 'finetuned10000', 'finetuned20000', 'finetuned40000']
+    for v in vocabs:
+        dataset = COCO_data("../../coco_data/dataset_coco.json","../../coco_data",'train',captions_per_image=1, choose_tokenizer=v)
+        loader = DataLoader(dataset, batch_size=16, shuffle=False, collate_fn=dataset.collate_fn, num_workers=20)
+        maxOfMax = -1
+        for i,instance in enumerate(loader):
+            image,caption,lengths, max_len = instance
+            # print(max_len)
+            maxOfMax = max(maxOfMax, max_len)
+
+        print(v, maxOfMax)
         # print("Input IDS: ", caption['input_ids'])
         # print("Attention mask: ", caption['attention_mask'])
         # print("Lengths: ", lengths, lengths.shape)

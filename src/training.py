@@ -206,29 +206,29 @@ class GANInstructor():
         g_loss = bce_loss(g_out, torch.zeros_like(g_out))
         if what == 'train':
             g_loss.backward()
-            # total_norm = 0.0
-            # for p in self.gen.parameters():
-            #     param_norm = p.grad.data.norm(2)
-            #     total_norm += param_norm.item() ** 2
-            # total_norm = total_norm ** (1. / 2)
-            # print("Gen: ",total_norm)
-            torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.args.clip_norm)
-            self.gen_opt.step()  
-
-        gen_captions, gen_caption_ids, output_logits = self.gen.sample(batch_size, batch_size, max_caption_len)
-        g_out = self.disc(gen_captions)
-        # g_loss = get_losses(g_out=g_out, loss_type=self.args.adv_loss_type)
-        g_loss = bce_loss(g_out, torch.zeros_like(g_out))
-        if what == 'train':
-            g_loss.backward()
             total_norm = 0.0
             for p in self.gen.parameters():
                 param_norm = p.grad.data.norm(2)
                 total_norm += param_norm.item() ** 2
             total_norm = total_norm ** (1. / 2)
-            #print("Gen: ",total_norm)
+            # print("Gen: ",total_norm)
             torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.args.clip_norm)
-            self.gen_opt.step()
+            self.gen_opt.step()  
+
+        # gen_captions, gen_caption_ids, output_logits = self.gen.sample(batch_size, batch_size, max_caption_len)
+        # g_out = self.disc(gen_captions)
+        # # g_loss = get_losses(g_out=g_out, loss_type=self.args.adv_loss_type)
+        # g_loss = bce_loss(g_out, torch.zeros_like(g_out))
+        # if what == 'train':
+        #     g_loss.backward()
+        #     total_norm = 0.0
+        #     for p in self.gen.parameters():
+        #         param_norm = p.grad.data.norm(2)
+        #         total_norm += param_norm.item() ** 2
+        #     total_norm = total_norm ** (1. / 2)
+        #     #print("Gen: ",total_norm)
+        #     torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.args.clip_norm)
+        #     self.gen_opt.step()
 
         self.writer.add_scalar('Generator_train_loss' if what=='train' else 'Generator_val_loss',g_loss,self.gen_steps)
         self.gen_steps+=1
