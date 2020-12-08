@@ -434,6 +434,7 @@ class GANInstructor():
                 d_real_loss.append(d_real.item())
                 disc_loss.append(d_loss.item())
 
+
                 #Generator
                 g_loss, total_norm_g = self.generator_train_iteration(gen_captions, what, bce_loss,images.size(0), max_caption_len, features, images)
                 gen_loss.append(g_loss.item())
