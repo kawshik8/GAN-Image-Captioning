@@ -66,7 +66,7 @@ class Decoder(nn.Module):
         self.embed = nn.Embedding(args.vocab_size, args.gen_embed_dim, padding_idx=1)
 
         if args.gen_model_type == 'lstm':
-            self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True, bidirectional=False, dropout = 0.2)
+            self.lstm = nn.LSTM(args.gen_embed_dim, args.gen_hidden_dim, args.gen_num_layers, batch_first=True, bidirectional=(args.bidirectional==1), dropout = 0.2)
 
 
         elif args.gen_model_type == 'transformer':# and args.conditional_gan:

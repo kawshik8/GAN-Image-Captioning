@@ -17,17 +17,17 @@ def add_model_args(parser):
 
     parser.add_argument('--gen-hidden-dim',
                             type=int,
-                            default=256,
+                            default=512,
                             help='hidden dimension of generator')
 
     parser.add_argument('--gen-embed-dim',
                             type=int,
-                            default=128,
+                            default=32,
                             help='embedding dimension of generator')
 
     parser.add_argument('--gen-num-layers',
                             type=int,
-                            default=6,
+                            default=1,
                             help='number of layers in generator')
 
     parser.add_argument('--gen-nheads',
@@ -42,9 +42,15 @@ def add_model_args(parser):
 
     parser.add_argument('--gen-model-type',
                             type=str,
-                            default='transformer',
+                            default='lstm',
                             choices=["transformer","lstm"],
                             help='type of generator to use')
+
+    parser.add_argument('--bidirectional',
+                            type=int,
+                            default=0,
+                            choices=[0,1],
+                            help='bidirectional lstm')
 
     parser.add_argument('--gen-model-output',
                             type=str,
@@ -197,12 +203,12 @@ def add_training_args(parser):
 
     parser.add_argument('--pretrain-lr-patience',
                             type=int,
-                            default=40,
+                            default=8,
                             help='patience for pretrain LROnPlateau scheduler')
 
     parser.add_argument('--pretrain-patience',
                             type=int,
-                            default=40,
+                            default=20,
                             help='number of epochs to wait before early stopping')
 
 
@@ -220,7 +226,7 @@ def add_training_args(parser):
 
     parser.add_argument('--gen-lr-patience',
                             type=int,
-                            default=40,
+                            default=10,
                             help='patience for generator LROnPlateau scheduler')
 
     parser.add_argument('--disc-lr',
@@ -233,10 +239,10 @@ def add_training_args(parser):
                             default=40,
                             help='patience for discriminator LROnPlateau scheduler')
 
-    parser.add_argument('--disc-train-freq',
+    parser.add_argument('--disc-steps',
                             type=int,
                             default=1,
-                            help='ratio of training steps of disc vs gen for stabilization')
+                            help='no of steps for discriminator for each batch')
 
     parser.add_argument('--gen-steps',
                             type=int,
@@ -250,12 +256,12 @@ def add_training_args(parser):
 
     parser.add_argument('--adv-train-batch-size',
                             type=int,
-                            default=64,
+                            default=32,
                             help='number of batches to train at each step of adversarial training')
 
     parser.add_argument('--adv-eval-batch-size',
                             type=int,
-                            default=64,
+                            default=32,
                             help='number of batches to train at each step of adversarial evaluation')
 
     parser.add_argument('--adv-loss-type',
@@ -265,7 +271,7 @@ def add_training_args(parser):
 
     parser.add_argument('--advtrain-patience',
                             type=int,
-                            default=40,
+                            default=1000,
                             help='number of epochs to wait before early stopping')
 
     parser.add_argument('--temperature',

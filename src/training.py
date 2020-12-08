@@ -400,7 +400,7 @@ class GANInstructor():
 
                 all_candidates+=self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
                 
-                if what == 'Val':
+                if what == 'val':
                     f.write('\n\nReal Caption: {}'.format(self.train_dataset.convert_to_tokens_references(real_captions[:,1:],skip_special_tokens = False)))
                     f.write('\n\nGenerated Caption: {}'.format(self.train_dataset.convert_to_tokens_candidates(gen_caption_ids,skip_special_tokens = False)))
                     f.flush()
