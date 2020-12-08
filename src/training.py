@@ -259,24 +259,17 @@ class GANInstructor():
                     g_loss = bce_loss(g_out, torch.ones_like(g_out))
                 if what == 'train':
                     g_loss.backward()
-        #            total_norm = 0.0
-        #    for p in self.gen.parameters():
-        #      if p.grad is not None:
-        #        param_norm = p.grad.data.norm(2)
-        #        total_norm += param_norm.item() ** 2
-        #    total_norm = total_norm ** (1. / 2)
-        #    #print("Gen: ",total_norm)
                     torch.nn.utils.clip_grad_norm_(self.gen.parameters(), self.args.clip_norm)
                     self.gen_opt.step()
 
         if what == 'train':
             self.writer.add_scalar('adv_norms/Gen_train_norm',total_norm, self.gen_steps)
-        self.writer.add_scalar('adv_losses/Generator_train_loss' if what=='train' else 'adv_losses/Generator_val_loss',g_loss,self.gen_steps)
+        # self.writer.add_scalar('adv_losses/Generator_train_loss' if what=='train' else 'adv_losses/Generator_val_loss',g_loss,self.gen_steps)
         self.gen_steps+=1
 
         return g_loss, total_norm
 
-    def discriminator_train_iteration(self,real_captions, fake_captions,attn_mask, what, bce_loss):
+    def discriminator_train_iteration(self,real_captions, fake_captions,attn_mask, what, bce_loss, batch_size, max_caption_len, features, images):
         total_norm =None
         real_captions = F.one_hot(real_captions, self.args.vocab_size).float()
 
@@ -333,13 +326,40 @@ class GANInstructor():
             torch.nn.utils.clip_grad_norm_(self.disc.parameters(), self.args.clip_norm)
             self.disc_opt.step()
 
+        if self.args.disc_steps > 1 and what == 'train':
+            for d_mini_step in range(self.args.disc_steps - 1):
+
+                self.disc_opt.zero_grad()
+        
+                d_out_real = self.disc(real_captions)
+
+
+                
+                if self.args.flip_labels:
+                    d_loss_real = bce_loss(d_out_real, fake_labels)
+                else:
+                    d_loss_real = bce_loss(d_out_real, real_labels)
+
+                d_loss_real.backward()
+                
+                d_out_fake = self.disc(fake_captions)
+
+                if self.args.flip_labels:
+                    d_loss_fake = bce_loss(d_out_fake, real_labels)
+                else:
+                    d_loss_fake = bce_loss(d_out_fake, fake_labels)
+                
+                d_loss_fake.backward()
+                torch.nn.utils.clip_grad_norm_(self.disc.parameters(), self.args.clip_norm)
+                self.disc_opt.step()
+
         d_loss = d_loss_real + d_loss_fake
 
         if what == 'train':
             self.writer.add_scalar('adv_norms/Disc_train_norm', total_norm, self.disc_steps)
-        self.writer.add_scalar('adv_losses/Discriminator_train_loss' if what=='train' else 'adv_losses/Discriminator_val_loss',d_loss,self.disc_steps)
-        self.writer.add_scalar('adv_losses/Discriminator_train_fake_loss' if what=='train' else 'adv_losses/Discriminator_val_real_loss',d_loss_real,self.disc_steps)
-        self.writer.add_scalar('adv_losses/Discriminator_train_real_loss' if what=='train' else 'adv_losses/Discriminator_val_fake_loss',d_loss_fake,self.disc_steps)
+        # self.writer.add_scalar('adv_losses/Discriminator_train_loss' if what=='train' else 'adv_losses/Discriminator_val_loss',d_loss,self.disc_steps)
+        # self.writer.add_scalar('adv_losses/Discriminator_train_fake_loss' if what=='train' else 'adv_losses/Discriminator_val_real_loss',d_loss_real,self.disc_steps)
+        # self.writer.add_scalar('adv_losses/Discriminator_train_real_loss' if what=='train' else 'adv_losses/Discriminator_val_fake_loss',d_loss_fake,self.disc_steps)
         self.disc_steps+=1
 
         return d_loss, d_loss_real, d_loss_fake, total_norm
@@ -408,15 +428,31 @@ class GANInstructor():
                 # ===Train===
 
                 #Discriminator
-                if float_epoch % self.gen_update == 0:
-                    d_loss, d_real, d_fake, total_norm_d= self.discriminator_train_iteration(real_captions, fake_captions, attn_mask, what, bce_loss)
-                    d_real_loss.append(d_real.item())
-                    d_fake_loss.append(d_fake.item())
-                    disc_loss.append(d_loss.item())
+
+                d_loss, d_real, d_fake, total_norm_d= self.discriminator_train_iteration(real_captions, fake_captions, attn_mask, what, bce_loss,images.size(0), max_caption_len, features, images)
+                d_fake_loss.append(d_fake.item())
+                disc_loss.append(d_loss.item())
 
                 #Generator
                 g_loss, total_norm_g = self.generator_train_iteration(gen_captions, what, bce_loss,images.size(0), max_caption_len, features, images)
                 gen_loss.append(g_loss.item())
+
+                self.writer.add_scalars(f'loss/Gen_Disc_Loss', {
+                                    'd_loss': d_loss.item(),
+                                    'g_loss':g_loss.item()
+                                }, self.gen_steps)
+                self.writer.add_scalars(f'loss/Gen_DiscRF_Loss', {
+                                    'd_real_loss':d_real.item(),
+                                    'd_fake_loss':d_fake.item(),
+                                    'g_loss':g_loss.item()
+                                }, self.gen_steps)
+                self.writer.add_scalars(f'loss/Disc_DiscRF_Loss', {
+                                    'd_real_loss':d_real.item(),
+                                    'd_fake_loss':d_fake.item(),
+                                    'd_loss':d_loss.item()
+                                }, self.gen_steps)
+
+
 
                 # g_loss = self.generator_train_iteration(gen_captions, what, bce_loss)
                 # gen_loss.append(g_loss.item())
