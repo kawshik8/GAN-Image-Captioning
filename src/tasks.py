@@ -122,7 +122,7 @@ class COCO_data(Dataset):
                          
     def __len__(self):
         
-         return int(self.dataset_percent*len(self.captions)*self.captions_per_image)
+         return int(int(self.dataset_percent*len(self.captions))*self.captions_per_image)
                          
     def reset_indices_dict(self):
         for key in self.caption_indices_dict:
