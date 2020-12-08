@@ -134,7 +134,7 @@ class COCO_data(Dataset):
         index = fine_index // self.captions_per_image
         caption_index = fine_index % self.captions_per_image
 #         print(index)
-        print(fine_index, index, caption_index)
+#        print(fine_index, index, caption_index)
         
         caption_dict = self.captions[index]
 
