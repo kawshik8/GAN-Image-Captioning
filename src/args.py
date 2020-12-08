@@ -155,7 +155,7 @@ def add_data_args(parser):
     
     ################### Common Part ###################
 
-    parser.add_argument('--dataset_percent',
+    parser.add_argument('--dataset-percent',
                             type=float,
                             default=1.0,
                             help='percentage of dataset to use for training')

@@ -1,7 +1,7 @@
 import torchvision.transforms as transforms
 import torchvision
 import json 
-
+from args import get_args
 import os
 import numpy as np
 #import h5py
@@ -28,13 +28,13 @@ class COCO_data(Dataset):
         json_file = json.load(open(captions_path,'r'))
         
         captions = json_file['images']
-
+        self.captions_per_image = captions_per_image
         self.tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
         
-        if os.path.exists(os.path.join(image_path, split + "_" + str(captions_per_image) + ".pkl")):
+        if os.path.exists(os.path.join(image_path, split + ".pkl")):
             print("Loading from saved dict")
 
-            saved_dict = pickle.load(open(os.path.join(image_path,split + "_" + str(captions_per_image) + ".pkl"),'rb'))
+            saved_dict = pickle.load(open(os.path.join(image_path,split + ".pkl"),'rb'))
             self.captions = saved_dict['captions']
             # self.word_to_index = saved_dict["w2i"]
             # self.index_to_word = saved_dict["i2w"]
@@ -65,23 +65,23 @@ class COCO_data(Dataset):
                         captions.remove(t_captions[i])
                     else:
             #            if split=='train':
-             #               caption_dict = {}
-              #              for key in row:
-               #                 caption_dict[key] = row[key]
+                            caption_dict = {}
+                            for key in row:
+                                caption_dict[key] = row[key]
 #
- #                           self.captions.append(caption_dict)
+                            self.captions.append(caption_dict)
 
     #                    else:
-                            for caption in row['sentences'][:captions_per_image]:
-                                caption_dict = {}
-                                for key in row:
-                                    if type(row[key]) != list:
-                                        caption_dict[key] = row[key]
+#                            for caption in row['sentences'][:captions_per_image]:
+#                                caption_dict = {}
+#                                for key in row:
+#                                    if type(row[key]) != list:
+#                                        caption_dict[key] = row[key]
                                 
-                                for key in caption:
-                                    caption_dict[key] = caption[key]
-                                    
-                                self.captions.append(caption_dict)
+#                                for key in caption:
+##                                    caption_dict[key] = caption[key]
+#                                    
+#                                self.captions.append(caption_dict)
 
                         
                         # for caption in row['sentences'][:captions_per_image]:    
@@ -98,7 +98,7 @@ class COCO_data(Dataset):
 
             save_dict = {"captions":self.captions}
                 
-            pickle.dump(save_dict, open(os.path.join(image_path,split + "_" + str(captions_per_image) + ".pkl"),'wb+'))
+            pickle.dump(save_dict, open(os.path.join(image_path,split + ".pkl"),'wb+'))
                          
         self.split = split             
         self.image_size = image_size
@@ -116,19 +116,26 @@ class COCO_data(Dataset):
         self.dataset_percent = dataset_percent
         self.max_seq_len = max_seq_len
             
+        print("total no of images: ", len(self.captions))
+        
+     
                          
     def __len__(self):
         
-         return int(self.dataset_percent*len(self.captions))
+         return int(self.dataset_percent*len(self.captions)*self.captions_per_image)
                          
     def reset_indices_dict(self):
         for key in self.caption_indices_dict:
             self.caption_indices_dict[key] = 0
                          
-    def __getitem__(self, index):
+    def __getitem__(self, fine_index):
          
-#         print(index)
 
+        index = fine_index // self.captions_per_image
+        caption_index = fine_index % self.captions_per_image
+#         print(index)
+        print(fine_index, index, caption_index)
+        
         caption_dict = self.captions[index]
 
         image_path = os.path.join(self.image_path,caption_dict['filepath'],caption_dict['filename'])
@@ -139,7 +146,7 @@ class COCO_data(Dataset):
      #   if self.split == "train":
       #      caption = random.choice(caption_dict['sentences'])['tokens']
        # else:
-        caption = caption_dict['tokens']
+        caption = caption_dict['sentences'][caption_index]['tokens']
 
         return image, caption, torch.ones(1)*34        
            
@@ -196,11 +203,15 @@ class COCO_data(Dataset):
 
 
 if __name__ == '__main__':
+
+    args = get_args()
      
-    dataset = COCO_data("../coco_data/dataset_coco.json","../coco_data",'train',captions_per_image=1)
-    loader = DataLoader(dataset, batch_size=16, shuffle=False, collate_fn=dataset.collate_fn, num_workers=4)
-    for i,instance in enumerate(loader):
+    dataset = COCO_data("../coco_data/dataset_coco.json","../coco_data",'train',dataset_percent = args.dataset_percent, captions_per_image=args.captions_per_image)
+    loader = DataLoader(dataset, batch_size=16 , shuffle=False, collate_fn=dataset.collate_fn, num_workers=args.num_workers)
+    with tqdm(total=len(loader)) as progress:
+      for i,instance in enumerate(loader):
         image,caption,lengths, max_len = instance
+        progress.update(1)
         # print("Input IDS: ", caption['input_ids'])
         # print("Attention mask: ", caption['attention_mask'])
         # print("Lengths: ", lengths, lengths.shape)
