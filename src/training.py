@@ -431,6 +431,7 @@ class GANInstructor():
 
                 d_loss, d_real, d_fake, total_norm_d= self.discriminator_train_iteration(real_captions, fake_captions, attn_mask, what, bce_loss,images.size(0), max_caption_len, features, images)
                 d_fake_loss.append(d_fake.item())
+                d_real_loss.append(d_real.item())
                 disc_loss.append(d_loss.item())
 
                 #Generator
