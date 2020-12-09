@@ -1,11 +1,14 @@
 import torch
 import math
+import numpy as np
 import torch.nn as nn
 import torchvision.models as models
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from utils import init_weight
 from transformer import *
+from torch.autograd import Variable
+
 
 class CDiscriminator(nn.Module):
     def __init__(self, args, gpu=False,dropout=0.2):
@@ -106,6 +109,8 @@ class TDiscriminator(nn.Module):
 
          self.init_params()
 
+         self.autoregressive = args.advloss_per_timestep
+
 
      def forward(self, input):
         
@@ -113,12 +118,22 @@ class TDiscriminator(nn.Module):
 
          positions = self.pos_embeddings(torch.arange(embeddings.size(1)).unsqueeze(0).repeat(embeddings.size(0),1).to(embeddings.device)).transpose(0,1)
 
-         # print(embeddings.shape, positions.shape)
+         if self.autoregressive:
+            max_caption_len = embeddings.size(1)
+            no_peek_mask = np.triu(np.ones((max_caption_len, max_caption_len)), k=1)  
+            no_peek_mask = Variable(torch.from_numpy(no_peek_mask) == 1).type(torch.bool).to(self.args.device)
 
-         out = self.transformer(embeddings.transpose(0,1), pos = positions).transpose(0,1)[:,0]
+            # print(embeddings.shape, positions.shape)
+
+            out = self.transformer(embeddings.transpose(0,1), pos = positions, mask=no_peek_mask).transpose(0,1)
+            logits = self.out2logits(out).squeeze().reshape(-1)
+
+         else:
+            out = self.transformer(embeddings.transpose(0,1), pos = positions).transpose(0,1)[:,0]
 #         print(out.shape)
 
-         logits = self.out2logits(out).squeeze()
+            logits = self.out2logits(out).squeeze()
+
 #         print(logits.shape)
          return logits
 
@@ -135,7 +150,7 @@ if __name__=='__main__':
     from args import get_args
 
     args = get_args()
-    discriminator = TDisc(args)
+    discriminator = TDiscriminator(args)
 
     b = 16
     real_captions = F.one_hot(torch.ones(b,34,dtype=torch.long),args.vocab_size).float().to(args.device)

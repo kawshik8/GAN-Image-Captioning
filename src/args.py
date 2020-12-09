@@ -269,6 +269,11 @@ def add_training_args(parser):
                             default='standard',
                             help='Loss function to use for adversarial training')
 
+    parser.add_argument('--advloss-per-timestep',
+                            type=int,
+                            default=0,
+                            help='get real/fake after each time step')
+
     parser.add_argument('--advtrain-patience',
                             type=int,
                             default=1000,
