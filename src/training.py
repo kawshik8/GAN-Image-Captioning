@@ -43,9 +43,9 @@ class GANInstructor():
 
         #Schedulers ReduceLROnPlateau
         # if args.gen_model_type == 'lstm':
-        self.pretrain_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.pretrain_opt, patience=args.pretrain_lr_patience, verbose=True)
-        self.gen_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.gen_opt, patience=args.gen_lr_patience, verbose=True)
-        self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.disc_opt, patience=args.disc_lr_patience, verbose=True)
+        self.pretrain_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.pretrain_opt, patience=args.pretrain_lr_patience, factor=0.5, verbose=True)
+        self.gen_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.gen_opt, patience=args.gen_lr_patience, factor=0.8, verbose=True)
+        self.disc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.disc_opt, patience=args.disc_lr_patience, factor=0.8, verbose=True)
         # else:
         #     self.pretrain_scheduler = torch.optim.lr_scheduler.OneCycleLR(self.pretrain_opt, max_lr=5e-4, total_steps = args.pretrain_epochs*((len(train_dataset)//args.pre_train_batch_size)+1), final_div_factor = 10, div_factor=25, pct_start=4/args.pretrain_epochs, anneal_strategy='cos')
         #     self.gen_scheduler = torch.optim.lr_scheduler.OneCycleLR(self.gen_opt, max_lr=5e-4, total_steps = args.adv_epochs*((len(train_dataset)//args.adv_train_batch_size)+1), pct_start=5/args.pretrain_epochs, final_div_factor = 10, div_factor = 25, anneal_strategy='cos')
