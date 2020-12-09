@@ -64,8 +64,10 @@ class GANInstructor():
         self.writer = SummaryWriter(args.save_dir)
         
         self.pretrain_steps = 0
-        self.gen_steps = 0
-        self.disc_steps = 0
+        self.gen_train_steps = 0
+        self.gen_val_steps = 0
+        self.disc_train_steps = 0
+        self.disc_val_steps = 0
 
         self.args = args
         self.cgan = (self.args.conditional_gan==1)
@@ -214,10 +216,13 @@ class GANInstructor():
 
         return (total_loss/epochs if epochs!=0 else 0)
     
-    def mle_iteration(self, real_captions, generated_captions):
-        criterion = nn.CrossEntropyLoss(ignore_index=1)
-        # print(real_captions.shape, generated_captions.shape)
-        loss = criterion(generated_captions.reshape(-1,generated_captions.size(-1)), real_captions.reshape(-1))
+    def mle_iteration(self, features, real_captions, lengths, attn_mask, max_caption_len, criterion, what):
+        self.gen.eval()
+        gen_captions, gen_caption_ids = self.gen.decoder(features, real_captions, lengths, pretrain = True, attn_mask=attn_mask, max_caption_len = max_caption_len)
+        gen_captions = gen_captions.to(self.args.device)
+        loss = criterion(gen_captions.reshape(-1,gen_captions.size(-1)), real_captions.reshape(-1))
+        if what == 'train':
+            self.gen.train()
         return loss
 
     def generator_train_iteration(self, generated_captions, what, bce_loss, batch_size, max_caption_len, features, images):
@@ -263,9 +268,12 @@ class GANInstructor():
                     self.gen_opt.step()
 
         if what == 'train':
-            self.writer.add_scalar('adv_norms/Gen_train_norm',total_norm, self.gen_steps)
-        self.writer.add_scalar('adv_losses/Generator_train_loss' if what=='train' else 'adv_losses/Generator_val_loss',g_loss,self.gen_steps)
-        self.gen_steps+=1
+            self.writer.add_scalar('adv_norms/Gen_train_norm',total_norm, self.gen_train_steps)
+            self.writer.add_scalar('adv_losses/Generator_train_loss', g_loss,self.gen_train_steps)
+            self.gen_train_steps+=1
+        else:
+            self.writer.add_scalar('adv_losses/Generator_val_loss', g_loss,self.gen_val_steps)
+            self.gen_val_steps+=1       
 
         return g_loss, total_norm
 
@@ -329,19 +337,15 @@ class GANInstructor():
         if self.args.disc_steps > 1 and what == 'train':
             for d_mini_step in range(self.args.disc_steps - 1):
 
-                self.disc_opt.zero_grad()
-        
+                self.disc_opt.zero_grad()     
                 d_out_real = self.disc(real_captions)
 
-
-                
                 if self.args.flip_labels:
                     d_loss_real = bce_loss(d_out_real, fake_labels)
                 else:
                     d_loss_real = bce_loss(d_out_real, real_labels)
 
-                d_loss_real.backward()
-                
+                d_loss_real.backward()              
                 d_out_fake = self.disc(fake_captions)
 
                 if self.args.flip_labels:
@@ -356,11 +360,16 @@ class GANInstructor():
         d_loss = d_loss_real + d_loss_fake
 
         if what == 'train':
-            self.writer.add_scalar('adv_norms/Disc_train_norm', total_norm, self.disc_steps)
-        self.writer.add_scalar('adv_losses/Discriminator_train_loss' if what=='train' else 'adv_losses/Discriminator_val_loss',d_loss,self.disc_steps)
-        self.writer.add_scalar('adv_losses/Discriminator_train_fake_loss' if what=='train' else 'adv_losses/Discriminator_val_real_loss',d_loss_real,self.disc_steps)
-        self.writer.add_scalar('adv_losses/Discriminator_train_real_loss' if what=='train' else 'adv_losses/Discriminator_val_fake_loss',d_loss_fake,self.disc_steps)
-        self.disc_steps+=1
+            self.writer.add_scalar('adv_norms/Disc_train_norm', total_norm, self.disc_train_steps)
+            self.writer.add_scalar('adv_losses/Discriminator_train_loss',d_loss,self.disc_train_steps)
+            self.writer.add_scalar('adv_losses/Discriminator_train_fake_loss',d_loss_real,self.disc_train_steps)
+            self.writer.add_scalar('adv_losses/Discriminator_train_real_loss',d_loss_fake,self.disc_train_steps)
+            self.disc_train_steps+=1
+        else:
+            self.writer.add_scalar('adv_losses/Discriminator_val_loss',d_loss,self.disc_val_steps)
+            self.writer.add_scalar('adv_losses/Discriminator_val_real_loss',d_loss_real,self.disc_val_steps)
+            self.writer.add_scalar('adv_losses/Discriminator_val_fake_loss',d_loss_fake,self.disc_val_steps)
+            self.disc_val_steps+=1
 
         return d_loss, d_loss_real, d_loss_fake, total_norm
 
@@ -376,7 +385,7 @@ class GANInstructor():
         num_sent = 0
         d_loss = None
         bce_loss = nn.BCEWithLogitsLoss()
-
+        criterion_mle = nn.CrossEntropyLoss(ignore_index=1)
         total = 0
         dataloader = None
         if what == 'train':
@@ -386,7 +395,7 @@ class GANInstructor():
             total = len(self.dev_dataset)
             dataloader = self.adv_eval_loader
 
-        with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total=total) as progress, open(os.path.join(self.args.save_dir,'./adv_sentences.txt'), 'w') as f :             
+        with (torch.enable_grad() if what=='train' else torch.no_grad()), tqdm(total=total) as progress:             
             for batch_idx, (images, captions, lengths, max_caption_len) in enumerate(dataloader):
                 
                 float_epoch += 1
@@ -414,21 +423,19 @@ class GANInstructor():
 
                 real_captions =  real_captions.to(self.args.device)
 
-                loss = self.mle_iteration(real_captions, output_logits)
-                mle_loss.append(loss.item())               
-                self.writer.add_scalar('adv_losses/gen_mle_loss',loss.item(),self.gen_steps)
+                loss = self.mle_iteration(features, real_captions, lengths, attn_mask, max_caption_len, criterion_mle, what)
+                mle_loss.append(loss.item())
+                if what == 'train':               
+                    self.writer.add_scalar('adv_losses/gen_train_mle_loss',loss.item(),self.gen_train_steps)
+                else:
+                    self.writer.add_scalar('adv_losses/gen_val_mle_loss',loss.item(),self.gen_val_steps)
 
                 all_candidates+=self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
-                
-                if what == 'val':
-                    f.write('\n\nReal Caption: {}'.format(self.train_dataset.convert_to_tokens_references(real_captions[:,1:],skip_special_tokens = False)))
-                    f.write('\n\nGenerated Caption: {}'.format(self.train_dataset.convert_to_tokens_candidates(gen_caption_ids,skip_special_tokens = False)))
-                    f.flush()
+
 
                 # ===Train===
 
                 #Discriminator
-
                 d_loss, d_real, d_fake, total_norm_d= self.discriminator_train_iteration(real_captions, fake_captions, attn_mask, what, bce_loss,images.size(0), max_caption_len, features, images)
                 d_fake_loss.append(d_fake.item())
                 d_real_loss.append(d_real.item())
@@ -460,13 +467,11 @@ class GANInstructor():
                 # gen_loss.append(g_loss.item())
 
                 progress.update(len(images))
-                if d_loss == None:
-                    progress.set_postfix(disc_loss=None, gen_loss=g_loss.item(), mle_loss=loss.item(),d_norm=total_norm_d, g_norm = total_norm_g)
-                else:
-                    progress.set_postfix(disc_loss=d_loss.item(), gen_loss=g_loss.item(), mle_loss=loss.item(),d_norm = total_norm_d, g_norm = total_norm_g)
+                progress.set_postfix(disc_loss=d_loss.item(), gen_loss=g_loss.item(), mle_loss=loss.item(),d_norm = total_norm_d, g_norm = total_norm_g)
 
-                self.update_temperature(self.adv_epoch + (float_epoch/len(dataloader)), self.args.adv_epochs)  # update temperature
-                self.writer.add_scalar('temperature',self.gen.decoder.temperature,self.gen_steps)
+                if what == 'train':
+                    self.update_temperature(self.adv_epoch + (float_epoch/len(dataloader)), self.args.adv_epochs)  # update temperature
+                    self.writer.add_scalar('temperature',self.gen.decoder.temperature,self.gen_train_steps)
 
         total_gen_loss = np.mean(gen_loss)
         total_disc_loss = np.mean(disc_loss)
