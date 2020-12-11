@@ -226,7 +226,7 @@ def add_training_args(parser):
 
     parser.add_argument('--gen-lr-patience',
                             type=int,
-                            default=10,
+                            default=20,
                             help='patience for generator LROnPlateau scheduler')
 
     parser.add_argument('--disc-lr',
@@ -236,7 +236,7 @@ def add_training_args(parser):
 
     parser.add_argument('--disc-lr-patience',
                             type=int,
-                            default=40,
+                            default=20,
                             help='patience for discriminator LROnPlateau scheduler')
 
     parser.add_argument('--disc-steps',

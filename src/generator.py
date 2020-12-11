@@ -102,6 +102,7 @@ class Decoder(nn.Module):
                 image_features = image_features.view(image_features.size(0),-1,image_features.size(1))
             else:
                 inputs = torch.cat((image_features.unsqueeze(1), embeddings), 1) 
+                
         else:
              inputs = embeddings
              lengths-=1
@@ -112,7 +113,7 @@ class Decoder(nn.Module):
             packed = pack_padded_sequence(inputs, lengths, batch_first=True)   
             packed_output, hidden = self.lstm(packed, )          
             output, input_sizes = pad_packed_sequence(packed_output, batch_first=True) #Unpack sequence
-           
+            output = output[:,1:] if self.args.conditional_gan else output
         else:
             attn_mask = (1.0 - attn_mask).type(torch.bool)
             
@@ -120,14 +121,15 @@ class Decoder(nn.Module):
             no_peek_mask = Variable(torch.from_numpy(no_peek_mask) == 1).type(torch.bool).to(self.args.device)
             #TODO 
             # attn_mask = attn_mask & no_peek_mask
-            # print(inputs.shape)
+            #print(inputs.shape, attn_mask.shape)
             positions = self.pos_embed(torch.arange(inputs.size(1)).long().unsqueeze(0).repeat(inputs.size(0),1).to(self.args.device)).transpose(0,1)
 
             if self.args.conditional_gan:
                 output = self.transformer(inputs.transpose(0,1), memory = image_features, query_pos=positions, tgt_mask = no_peek_mask, tgt_key_padding_mask=attn_mask).transpose(0,1)
             else:
                 output = self.transformer(inputs.transpose(0,1), pos=positions, mask = no_peek_mask, src_key_padding_mask=attn_mask).transpose(0,1)
-                output =output[:,:-1]
+        
+            output = output[:,:-1]
 
         if pretrain:
             pred = self.linear(output)
@@ -145,17 +147,18 @@ class Decoder(nn.Module):
         
         if self.args.conditional_gan:  
             if self.args.gen_model_type == 'transformer':            
-                if args.gen_model_output == 'pool':
+                if self.args.gen_model_output == 'pool':
                     image_features = image_features.unsqueeze(1) 
                 else:
                     image_features = image_features.view(image_features.size(0),-1,image_features.size(1))
                 inputs = self.embed(torch.zeros(batch_size,1, dtype=torch.long).to(self.args.device))
             else:
-                inputs = image_features.unsqueeze(1)
+                inputs = torch.cat([image_features.unsqueeze(1),self.embed(torch.zeros(batch_size,1, dtype=torch.long).to(self.args.device))],dim=1)
         else:
             inputs = self.embed(torch.zeros(batch_size,1, dtype=torch.long).to(self.args.device))
 
         outputs = []
+   #     print(max_caption_len)
         for i in range(max_caption_len):
 
             if self.args.gen_model_type == 'lstm':       
@@ -164,7 +167,7 @@ class Decoder(nn.Module):
                 positions = self.pos_embed(torch.arange(inputs.size(1)).long().unsqueeze(0).repeat(inputs.size(0),1).to(self.args.device)).transpose(0,1)
                 
                 if self.args.conditional_gan:
-                    hiddens = self.transformer(tgt=inputs.transpose(0,1),query_pos = pos, memory=image_features.transpose(0,1)).transpose(0,1)
+                    hiddens = self.transformer(tgt=inputs.transpose(0,1),query_pos = positions, memory=image_features.transpose(0,1)).transpose(0,1)
                 else:         
                     hiddens = self.transformer(inputs.transpose(0,1), pos = positions).transpose(0,1)
 

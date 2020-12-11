@@ -176,6 +176,9 @@ class COCO_data(Dataset):
                 return_tensors='pt',
                 return_length = True
             )
+
+        #print("inside collate: ")
+        #print(
         
         captions['attention_mask'] = captions['attention_mask'].squeeze().type(torch.LongTensor)
         captions['input_ids'] = captions['input_ids'].squeeze().type(torch.LongTensor)      
@@ -184,6 +187,9 @@ class COCO_data(Dataset):
         captions['length'], indices = torch.sort(captions['length'], dim=0, descending=True)
         captions['input_ids'] = captions['input_ids'][indices]
         captions['attention_mask'] = captions['attention_mask'][indices]
+
+#        print("inside collate fn")
+#        print(captions["input_ids"][:2])
 
         images = images[indices]          
 

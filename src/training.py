@@ -80,6 +80,8 @@ class GANInstructor():
         self.teacher_force_choice_pre = 1.0
         self.teacher_force_choice_adv = 0.0
 
+        self.log.info("args: {}".format(self.args))
+
     def genpretrain_loop(self, what):
 
         gen_loss = []
@@ -127,13 +129,20 @@ class GANInstructor():
                     g_captions = self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
                     all_candidates += g_captions             
         
-                    if not self.args.conditional_gan:
-                       real_captions = real_captions[:,1:]
+                    #if not self.args.conditional_gan:
+                    #real_captions = real_captions[:,1:]
+#                    print("pretrain outputs:")
+#                    print(real_captions[:2])
+#                    print(gen_caption_ids[:2])
+#                    print(real_captions.shape, gen_caption_ids.shape)
+
+                    real_captions = real_captions[:,1:]
 
                     if what == 'val':
                         f.write('\n\nReal Caption: {}'.format(self.train_dataset.convert_to_tokens_references(captions,skip_special_tokens = False)))
                         f.write('\n\nGenerated Caption: {}'.format(self.train_dataset.convert_to_tokens_candidates(gen_caption_ids,skip_special_tokens = False)))
                         f.flush()
+
                     loss = criterion(gen_captions.reshape(-1,gen_captions.size(-1)), real_captions.reshape(-1))
                     gen_loss.append(loss.item())
 
@@ -220,10 +229,14 @@ class GANInstructor():
         self.gen.eval()
         gen_captions, gen_caption_ids = self.gen.decoder(features, real_captions, lengths, pretrain = True, attn_mask=attn_mask, max_caption_len = max_caption_len)
         gen_captions = gen_captions.to(self.args.device)
-        loss = criterion(gen_captions.reshape(-1,gen_captions.size(-1)), real_captions.reshape(-1))
+#        print("mle outputs:")
+#        print(gen_caption_ids[:2])
+#        print(real_captions[:2])
+#        print(gen_caption_ids.shape, real_captions.shape)
+        loss = criterion(gen_captions.reshape(-1,gen_captions.size(-1)), real_captions[:,1:].reshape(-1))
         if what == 'train':
             self.gen.train()
-        return loss
+        return loss.detach().cpu()
 
     def generator_train_iteration(self, generated_captions, what, bce_loss, batch_size, max_caption_len, features, images):
         self.gen_opt.zero_grad()
@@ -269,13 +282,13 @@ class GANInstructor():
 
         if what == 'train':
             self.writer.add_scalar('adv_norms/Gen_train_norm',total_norm, self.gen_train_steps)
-            self.writer.add_scalar('adv_losses/Generator_train_loss', g_loss,self.gen_train_steps)
+            self.writer.add_scalar('adv_losses/Generator_train_loss', g_loss.detach().cpu().item(),self.gen_train_steps)
             self.gen_train_steps+=1
         else:
-            self.writer.add_scalar('adv_losses/Generator_val_loss', g_loss,self.gen_val_steps)
+            self.writer.add_scalar('adv_losses/Generator_val_loss', g_loss.detach().cpu().item(),self.gen_val_steps)
             self.gen_val_steps+=1       
 
-        return g_loss, total_norm
+        return g_loss.detach().cpu(), total_norm
 
     def discriminator_train_iteration(self,real_captions, fake_captions,attn_mask, what, bce_loss, batch_size, max_caption_len, features, images):
         total_norm =None
@@ -361,17 +374,17 @@ class GANInstructor():
 
         if what == 'train':
             self.writer.add_scalar('adv_norms/Disc_train_norm', total_norm, self.disc_train_steps)
-            self.writer.add_scalar('adv_losses/Discriminator_train_loss',d_loss,self.disc_train_steps)
-            self.writer.add_scalar('adv_losses/Discriminator_train_fake_loss',d_loss_real,self.disc_train_steps)
-            self.writer.add_scalar('adv_losses/Discriminator_train_real_loss',d_loss_fake,self.disc_train_steps)
+            self.writer.add_scalar('adv_losses/Discriminator_train_loss',d_loss.detach().cpu().item(),self.disc_train_steps)
+            self.writer.add_scalar('adv_losses/Discriminator_train_fake_loss',d_loss_real.detach().cpu().item(),self.disc_train_steps)
+            self.writer.add_scalar('adv_losses/Discriminator_train_real_loss',d_loss_fake.detach().cpu().item(),self.disc_train_steps)
             self.disc_train_steps+=1
         else:
-            self.writer.add_scalar('adv_losses/Discriminator_val_loss',d_loss,self.disc_val_steps)
-            self.writer.add_scalar('adv_losses/Discriminator_val_real_loss',d_loss_real,self.disc_val_steps)
-            self.writer.add_scalar('adv_losses/Discriminator_val_fake_loss',d_loss_fake,self.disc_val_steps)
+            self.writer.add_scalar('adv_losses/Discriminator_val_loss',d_loss.detach().cpu().item(),self.disc_val_steps)
+            self.writer.add_scalar('adv_losses/Discriminator_val_real_loss',d_loss_real.detach().cpu().item(),self.disc_val_steps)
+            self.writer.add_scalar('adv_losses/Discriminator_val_fake_loss',d_loss_fake.detach().cpu().item(),self.disc_val_steps)
             self.disc_val_steps+=1
 
-        return d_loss, d_loss_real, d_loss_fake, total_norm
+        return d_loss.detach().cpu(), d_loss_real.detach().cpu(), d_loss_fake.detach().cpu(), total_norm
 
     def adv_loop(self, what):        
         float_epoch = 0.0
@@ -399,7 +412,7 @@ class GANInstructor():
             for batch_idx, (images, captions, lengths, max_caption_len) in enumerate(dataloader):
                 
                 float_epoch += 1
-
+                print(torch.cuda.memory_allocated(self.args.device))
                 all_references += self.train_dataset.convert_to_tokens_references(captions['input_ids'])
                 images, lengths = images.to(self.args.device), lengths.to(self.args.device)
 
@@ -415,16 +428,19 @@ class GANInstructor():
                 # gen_captions, gen_caption_ids, output_logits = self.gen.sample(images.size(0), images.size(0), max_caption_len)
                 fake_captions = gen_captions.detach()   
                 
-                if not self.cgan:              
-                    real_captions = real_captions[:,1:]   # Remove start token   
-                    fake_captions = fake_captions[:,:-1]   #Remove token generated for stop token (we generate sentence upto max length in sampling)
-                    gen_captions = gen_captions[:,:-1]
-                    output_logits = output_logits[:, :-1]
+               # if not self.cgan:              
+               # real_captions = real_captions[:,1:]   # Remove start token   
+               #     fake_captions = fake_captions[:,:-1]   #Remove token generated for stop token (we generate sentence upto max length in sampling)
+               #     gen_captions = gen_captions[:,:-1]
+               #     output_logits = output_logits[:, :-1]
 
                 real_captions =  real_captions.to(self.args.device)
-
+#                print("adv outputs:")
+#                print(gen_caption_ids[:2])
+#                print(real_captions[:2])
+#                print(gen_caption_ids.shape, real_captions.shape)
                 loss = self.mle_iteration(features, real_captions, lengths, attn_mask, max_caption_len, criterion_mle, what)
-                mle_loss.append(loss.item())
+                mle_loss.append(loss.detach().item())
                 if what == 'train':               
                     self.writer.add_scalar('adv_losses/gen_train_mle_loss',loss.item(),self.gen_train_steps)
                 else:
