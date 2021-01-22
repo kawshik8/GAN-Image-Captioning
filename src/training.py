@@ -149,8 +149,8 @@ class GANInstructor():
                     if what=='train':
                         loss.backward()
                         self.pretrain_opt.step()
-                        if self.args.gen_model_type == 'transformer':
-                            self.pretrain_scheduler.step()
+                        #if self.args.gen_model_type == 'transformer':
+                        #    self.pretrain_scheduler.step()
 
                     self.writer.add_scalar('pretrain_losses/Gen_train_loss' if what=='train' else 'pretrain_losses/Gen_val_loss',loss,self.pretrain_steps)         
                     progress.update(len(images))
@@ -184,8 +184,8 @@ class GANInstructor():
             gen_loss, ref, gen = self.genpretrain_loop('val')
             val_epoch_loss = np.mean(gen_loss)
 
-            if self.args.gen_model_type == 'lstm':
-                self.pretrain_scheduler.step(val_epoch_loss)
+            #if self.args.gen_model_type == 'lstm':
+            self.pretrain_scheduler.step(val_epoch_loss)
 
             val_bleu = nltk.translate.bleu_score.corpus_bleu(ref,gen,weights = weights,smoothing_function=SmoothingFunction().method1) #Default 4 gram -> BLEU-4
 
@@ -506,7 +506,11 @@ class GANInstructor():
     def _run(self, weights=[0.25,0.25,0.25,0.25]):
     
         ## === PRETRAINING GENERATOR === ##
-        self.pretrain_generator(self.args.pretrain_epochs, weights)
+        if self.args.pretrained_model_file is not None:
+            self.log.info('Loading pretrained model file')
+            self.gen.load_state_dict(torch.load(self.args.pretrained_model_file))
+        else:
+            self.pretrain_generator(self.args.pretrain_epochs, weights)
 
         # # ===ADVERSARIAL TRAINING===
         self.log.info('Starting Adversarial Training...')

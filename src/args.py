@@ -211,7 +211,11 @@ def add_training_args(parser):
                             default=20,
                             help='number of epochs to wait before early stopping')
 
-
+    parser.add_argument('--pretrained-model-file',
+                            type=str,
+                            default=None,
+                            help='Name of the pretrained model file')
+    
     #################### Adversarial Training ###################
 
     parser.add_argument('--gen-lr',
