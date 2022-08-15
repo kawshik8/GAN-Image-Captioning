@@ -80,6 +80,7 @@ class GANInstructor():
         self.teacher_force_choice_pre = 1.0
         self.teacher_force_choice_adv = 0.0
 
+
         self.log.info("args: {}".format(self.args))
 
     def genpretrain_loop(self, what):
@@ -449,6 +450,7 @@ class GANInstructor():
                 all_candidates+=self.train_dataset.convert_to_tokens_candidates(gen_caption_ids)
 
 
+
                 # ===Train===
 
                 #Discriminator
@@ -580,6 +582,15 @@ class GANInstructor():
                 self.log.info("\n Best mle_loss found ! {} ".format(best_mle_loss))
                 torch.save({"generator":self.gen.state_dict(),
                             "discriminator":self.disc.state_dict()}, self.model_dir + "/adv_model_best_mle.ckpt")
+
+                           
+                self.log.info("Saving Best model [Gen Loss = {}] at Epoch {}".format(best_loss, epoch))    
+
+            # TEST
+            if adv_epoch % self.args.adv_log_step == 0 or adv_epoch == self.args.adv_epochs - 1:
+                self.log.info('[ADV] epoch %d (temperature: %.4f):\n\t g_loss: %.4f | %.4f \n\t d_loss: %.4f | %.4f' % (
+                    adv_epoch, self.gen.decoder.temperature, train_g_loss, val_g_loss, train_d_loss, val_d_loss))
+
 
             
             if adv_epoch % self.args.checkpoint_freq == 0:
