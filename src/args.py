@@ -9,6 +9,12 @@ def add_model_args(parser):
 
     ################### Generator ###################
 
+    parser.add_argument('--resnet-type',
+                            type=str,
+                            default="resnet18",
+                            choices=["resnet18","resnet34","resnet50","resnet101","resnet152"],
+                            help='resnet model to use')
+
     parser.add_argument('--gen-hidden-dim',
                             type=int,
                             default=512,
@@ -24,22 +30,67 @@ def add_model_args(parser):
                             default=1,
                             help='number of layers in generator')
 
+    parser.add_argument('--gen-nheads',
+                            type=int,
+                            default=8,
+                            help='number of heads for multi headed attention in generators')
+
     parser.add_argument('--gen-init',
                             type=str,
                             default='uniform',
                             help='Initialization strategy for generator weights')
 
+    parser.add_argument('--gen-model-type',
+                            type=str,
+                            default='lstm',
+                            choices=["transformer","lstm"],
+                            help='type of generator to use')
+
+    parser.add_argument('--bidirectional',
+                            type=int,
+                            default=0,
+                            choices=[0,1],
+                            help='bidirectional lstm')
+
+    parser.add_argument('--gen-model-output',
+                            type=str,
+                            default='grid',
+                            choices=["grid","pool"],
+                            help='type of cnn output to use')
+
+    parser.add_argument('--freeze-cnn',
+                            type=int,
+                            default=1,
+                            choices=[0,1],
+                            help='use cnn as feature extractor? or backpropogate gradients?')
+
     ################### Discriminator ###################
+
+    parser.add_argument('--disc-type',
+                            type=str,
+                            default='cnn',
+                            choices=["transformer","cnn"],
+                            help='type of discriminator to use')
 
     parser.add_argument('--disc-embed-dim',
                             type=int,
                             default=64,
                             help='embeddings dimension to use in discriminator')
 
+    parser.add_argument('--disc-hidden-dim',
+                            type=int,
+                            default=128,
+                            help='hidden dimension of generator')
+
     parser.add_argument('--disc-num-rep',
                             type=int,
                             default=64,
                             help='number of representations to use for CNN discriminator')
+
+    parser.add_argument('--disc-num-layers',
+                            type=int,
+                            default=4,
+                            help='number of layers in discriminator')
 
     parser.add_argument('--disc-filter-sizes',
                             type=list,
@@ -55,6 +106,11 @@ def add_model_args(parser):
                             type=str,
                             default='uniform',
                             help='init strategy for discriminator weights')
+
+    parser.add_argument('--disc-nheads',
+                            type=int,
+                            default=8,
+                            help='number of heads for multi headed attention in discriminator')
     
     #################### Common args #####################
     
@@ -77,7 +133,7 @@ def add_data_args(parser):
 
     parser.add_argument('--vocab-size',
                             type=int,
-                            default=-1,
+                            default=100,
                             help='vocab size for training')
 
     parser.add_argument('--max-seq-len',
@@ -87,7 +143,7 @@ def add_data_args(parser):
 
     parser.add_argument('--padding-idx',
                             type=int,
-                            default=0,
+                            default=1,
                             help='index of padding token in vocab')
 
     
@@ -100,16 +156,20 @@ def add_data_args(parser):
 
     parser.add_argument('--captions-per-image',
                             type=int,
-                            default=1,
+                            default=5,
                             help='no of captions to use per image')
     
     ################### Common Part ###################
 
-    parser.add_argument('--dataset_percent',
+    parser.add_argument('--dataset-percent',
                             type=float,
                             default=1.0,
                             help='percentage of dataset to use for training')
 
+    parser.add_argument('--num-workers',
+                            type=int,
+                            default=4,
+                            help='no of workers in data loader')
     #args = parser.parse_args()
 
     #return args
@@ -127,55 +187,101 @@ def add_training_args(parser):
 
     parser.add_argument('--pretrain-epochs',
                             type=int,
-                            default=0,
+                            default=50,
                             help='number of epochs for pretraining generator')
 
     parser.add_argument('--pre-train-batch-size',
                             type=int,
-                            default=64,
+                            default=32,
                             help='number of batches to train at each step of pretrain training')
 
     parser.add_argument('--pre-eval-batch-size',
                             type=int,
-                            default=64,
+                            default=32,
                             help='number of batches to train at each step of pretrain evaluation')
 
+
+    parser.add_argument('--pretrain-lr-patience',
+                            type=int,
+                            default=8,
+                            help='patience for pretrain LROnPlateau scheduler')
+
+    parser.add_argument('--pretrain-patience',
+                            type=int,
+                            default=20,
+                            help='number of epochs to wait before early stopping')
+
+    parser.add_argument('--pretrained-model-file',
+                            type=str,
+                            default=None,
+                            help='Name of the pretrained model file')
+    
     #################### Adversarial Training ###################
 
     parser.add_argument('--gen-lr',
                             type=float,
                             default=1e-4,
                             help='learning rate for adversarial training of generator')
+    
+    parser.add_argument('--flip-labels',
+                            type=int,
+                            default=0,
+                            help='flip real and fake labels')
+
+    parser.add_argument('--gen-lr-patience',
+                            type=int,
+                            default=20,
+                            help='patience for generator LROnPlateau scheduler')
 
     parser.add_argument('--disc-lr',
                             type=float,
                             default=1e-4,
                             help='learning rate for adversarial training of generator')
 
-    parser.add_argument('--disc-train-freq',
+    parser.add_argument('--disc-lr-patience',
+                            type=int,
+                            default=20,
+                            help='patience for discriminator LROnPlateau scheduler')
+
+    parser.add_argument('--disc-steps',
                             type=int,
                             default=1,
-                            help='ratio of training steps of disc vs gen for stabilization')
+                            help='no of steps for discriminator for each batch')
+
+    parser.add_argument('--gen-steps',
+                            type=int,
+                            default=1,
+                            help='no of steps for generator for each batch')
 
     parser.add_argument('--adv-epochs',
                             type=int,
-                            default=30,
+                            default=50,
                             help='number of epochs for adversarial training')
 
     parser.add_argument('--adv-train-batch-size',
                             type=int,
-                            default=64,
+                            default=32,
                             help='number of batches to train at each step of adversarial training')
 
     parser.add_argument('--adv-eval-batch-size',
                             type=int,
-                            default=64,
+                            default=32,
                             help='number of batches to train at each step of adversarial evaluation')
 
     parser.add_argument('--adv-loss-type',
                             type=str,
                             default='standard',
                             help='Loss function to use for adversarial training')
+
+    parser.add_argument('--advloss-per-timestep',
+                            type=int,
+                            default=0,
+                            help='get real/fake after each time step')
+
+    parser.add_argument('--advtrain-patience',
+                            type=int,
+                            default=1000,
+                            help='number of epochs to wait before early stopping')
 
     parser.add_argument('--temperature',
                             type=int,
@@ -191,7 +297,6 @@ def add_training_args(parser):
                             type=float,
                             default=5.0,
                             help='Gradient clipping threshold')
-
 
     #args = parser.parse_args()
         
@@ -255,6 +360,15 @@ def get_args():
                             default="log",
                             help='Log file to save logs')
 
+    parser.add_argument('--sent-log-file',
+                            type=str,
+                            default="sent_log",
+                            help='Log file to save logs')
+
+    parser.add_argument('--checkpoint-freq',
+                            type=int,
+                            default=10,
+                            help=' frequency of checkpointing model weights ')
 
     args = parser.parse_args()
 
@@ -270,7 +384,8 @@ def get_args():
     os.mkdir(args.save_dir)
     args.model_dir = os.path.join(args.save_dir, args.model_dir)
     os.mkdir(args.model_dir)
-    args.log_file = os.path.join(args.save_dir, args.log_file)    
+    args.log_file = os.path.join(args.save_dir, args.log_file) 
+    args.sent_log_file = os.path.join(args.save_dir, args.sent_log_file)   
 
     if args.device == 'cuda' and torch.cuda.is_available():
         args.device = torch.device("cuda:0")#{args.device_ids}")

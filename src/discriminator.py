@@ -1,14 +1,18 @@
 import torch
 import math
+import numpy as np
 import torch.nn as nn
 import torchvision.models as models
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from utils import init_weight
+from transformer import *
+from torch.autograd import Variable
 
 
-class Discriminator(nn.Module):
+class CDiscriminator(nn.Module):
     def __init__(self, args, gpu=False,dropout=0.2):
-        super(Discriminator, self).__init__()
+        super(CDiscriminator, self).__init__()
 
         self.vocab_size = args.vocab_size
         self.embed_dim = args.disc_embed_dim
@@ -29,6 +33,7 @@ class Discriminator(nn.Module):
         self.out2logits = nn.Linear(100, 1)
         self.dropout = nn.Dropout(dropout)
         self.args = args
+        # self.apply(init_weight)
         self.init_params()
 
     def forward(self, inp):
@@ -38,25 +43,13 @@ class Discriminator(nn.Module):
         :return logits: [batch_size * num_rep] (1-D tensor)
         """
         emb = self.embeddings(inp).unsqueeze(1)  # batch_size * 1 * max_seq_len * embed_dim
-        # print(emb.shape)
-        cons = [F.relu(conv(emb)) for conv in self.convs]  # [batch_size * num_filter * (seq_len-k_h+1) * num_rep]
-        # for con in cons:
-        #     print(con.shape)
+        cons = [F.leaky_relu(conv(emb)) for conv in self.convs]  # [batch_size * num_filter * (seq_len-k_h+1) * num_rep]
         pools = [F.max_pool2d(con, (con.size(2), 1)).squeeze(2) for con in cons]  # [batch_size * num_filter * num_rep]
-        # for pool in pools:
-        #     print(pool.shape)
-        # print(pools.shape)
         pred = torch.cat(pools, 1)
-        # print(pred.shape)
         pred = pred.permute(0, 2, 1).contiguous().view(-1, self.feature_dim)  # (batch_size * num_rep) * feature_dim
-        # print(pred.shape)
         highway = self.highway(pred)
-        # print(highway.shape)
-        pred = torch.sigmoid(highway) * F.relu(highway) + (1. - torch.sigmoid(highway)) * pred  # highway
-        # print(pred.shape)
-
+        pred = torch.sigmoid(highway) * F.leaky_relu(highway) + (1. - torch.sigmoid(highway)) * pred  # highway
         pred = self.feature2out(self.dropout(pred))
-        # print(pred.shape)
         logits = self.out2logits(pred).squeeze(1)  # [batch_size * num_rep]
 
         return logits
@@ -68,11 +61,11 @@ class Discriminator(nn.Module):
         :return: batch_size * feature_dim
         """
         emb = self.embeddings(inp).unsqueeze(1)  # batch_size * 1 * max_seq_len * embed_dim
-        convs = [F.relu(conv(emb)).squeeze(3) for conv in self.convs]  # [batch_size * num_filter * length]
+        convs = [F.leaky_relu(conv(emb)).squeeze(3) for conv in self.convs]  # [batch_size * num_filter * length]
         pools = [F.max_pool1d(conv, conv.size(2)).squeeze(2) for conv in convs]  # [batch_size * num_filter]
         pred = torch.cat(pools, 1)  # tensor: batch_size * feature_dim
         highway = self.highway(pred)
-        pred = torch.sigmoid(highway) * F.relu(highway) + (1. - torch.sigmoid(highway)) * pred  # highway
+        pred = torch.sigmoid(highway) * F.leaky_relu(highway) + (1. - torch.sigmoid(highway)) * pred  # highway
 
         return pred
 
@@ -85,12 +78,79 @@ class Discriminator(nn.Module):
                 elif self.args.disc_init == 'normal':
                     torch.nn.init.normal_(param, std=stddev)
 
+#if __name__=='__main__':
+#    from args import get_args
+#
+#    args = get_args()
+#    discriminator = Discriminator(args)
+
+ ##   b = 16
+#    real_captions = F.one_hot(torch.ones(b,34,dtype=torch.long),args.vocab_size).float().to(args.device)
+#    fake_captions = torch.rand(b,34,args.vocab_size).to(args.device)
+#    print(real_captions.shape, fake_captions.shape)
+#
+#    real_pred = discriminator(real_captions#)
+#    fake_pred = discriminator(fake_captions)#
+#    print("output fake and real : ",fake_pred.shape, real_pred.shape)
+
+
+class TDiscriminator(nn.Module):
+     def __init__(self, args, gpu=False,dropout=0.2):
+         super(TDiscriminator, self).__init__()
+
+         self.args = args
+         self.embeddings = nn.Linear(args.vocab_size, args.disc_embed_dim)
+         self.pos_embeddings = nn.Embedding(100, args.disc_embed_dim)
+
+         encoder_layer = TransformerEncoderLayer(args.disc_embed_dim, args.disc_nheads, args.disc_hidden_dim)
+         self.transformer = TransformerEncoder(encoder_layer, args.disc_num_layers)
+
+         self.out2logits = nn.Linear(args.disc_embed_dim, 1)
+
+         self.init_params()
+
+         self.autoregressive = args.advloss_per_timestep
+
+
+     def forward(self, input):
+        
+         embeddings = self.embeddings(input) # 16 x 34 x 50234 -> 16 x34 x 32
+
+         positions = self.pos_embeddings(torch.arange(embeddings.size(1)).unsqueeze(0).repeat(embeddings.size(0),1).to(embeddings.device)).transpose(0,1)
+
+         if self.autoregressive:
+            max_caption_len = embeddings.size(1)
+            no_peek_mask = np.triu(np.ones((max_caption_len, max_caption_len)), k=1)  
+            no_peek_mask = Variable(torch.from_numpy(no_peek_mask) == 1).type(torch.bool).to(self.args.device)
+
+            # print(embeddings.shape, positions.shape)
+
+            out = self.transformer(embeddings.transpose(0,1), pos = positions, mask=no_peek_mask).transpose(0,1)
+            logits = self.out2logits(out).squeeze().reshape(-1)
+
+         else:
+            out = self.transformer(embeddings.transpose(0,1), pos = positions).transpose(0,1)[:,0]
+#         print(out.shape)
+
+            logits = self.out2logits(out).squeeze()
+
+#         print(logits.shape)
+         return logits
+
+     def init_params(self):
+         for param in self.parameters():
+             if param.requires_grad and len(param.shape) > 0:
+                 stddev = 1 / math.sqrt(param.shape[0])
+                 if self.args.disc_init == 'uniform':
+                     torch.nn.init.uniform_(param, a=-0.05, b=0.05)
+                 elif self.args.disc_init == 'normal':
+                     torch.nn.init.normal_(param, std=stddev)
 
 if __name__=='__main__':
     from args import get_args
 
     args = get_args()
-    discriminator = Discriminator(args)
+    discriminator = TDiscriminator(args)
 
     b = 16
     real_captions = F.one_hot(torch.ones(b,34,dtype=torch.long),args.vocab_size).float().to(args.device)
@@ -100,5 +160,3 @@ if __name__=='__main__':
     real_pred = discriminator(real_captions)
     fake_pred = discriminator(fake_captions)
     print("output fake and real : ",fake_pred.shape, real_pred.shape)
-
-
